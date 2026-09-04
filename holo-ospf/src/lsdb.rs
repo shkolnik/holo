@@ -670,6 +670,12 @@ pub(crate) fn originate_check<V>(
         if lsa_same_contents(&old_lse.data, &lsa)
             && !old_lse.flags.contains(LsaEntryFlags::RECEIVED)
         {
+            // A delayed origination holds the LSA built when it was requested,
+            // and the timer fires it unchanged. Reaching here means the
+            // database copy already says what this router wants to advertise,
+            // so any pending copy is stale and would undo it: drop it (which
+            // cancels its timer) instead of letting it flood.
+            lsdb.delayed_orig.remove(&lsa_key);
             return;
         }
 
