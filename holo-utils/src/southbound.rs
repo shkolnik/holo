@@ -277,11 +277,24 @@ pub struct FibPolicy {
     /// 1 = static, 2 = BGP; every other protocol → `base + 3`) instead of the well-known
     /// ids, and startup purge / shutdown uninstall touch ONLY that range.
     pub proto_base: Option<u8>,
+    /// Preferred-source rules: a route whose prefix lies inside `0` is installed with
+    /// RTA_PREFSRC = `1` (first match wins; rules are checked in order).
+    pub prefsrc: Vec<(IpNetwork, IpAddr)>,
 }
 
 // ===== impl FibPolicy =====
 
 impl FibPolicy {
+    /// The preferred source address for a route to `prefix`, if a rule covers it.
+    pub fn prefsrc_for(&self, prefix: &IpNetwork) -> Option<IpAddr> {
+        self.prefsrc
+            .iter()
+            .find(|(net, _)| {
+                net.contains(prefix.ip()) && net.prefix() <= prefix.prefix()
+            })
+            .map(|(_, a)| *a)
+    }
+
     /// The kernel protocol id for `protocol` under this policy, or None = holo's default mapping.
     pub fn proto_id(&self, protocol: Protocol) -> Option<u8> {
         let base = self.proto_base?;
@@ -301,7 +314,44 @@ impl FibPolicy {
 
 #[cfg(test)]
 mod tests {
+    use const_addrs::{ip, net};
+
     use super::*;
+
+    #[test]
+    fn fib_policy_prefsrc_for() {
+        let policy = FibPolicy {
+            prefsrc: vec![
+                (net!("10.99.0.0/16"), ip!("10.99.0.2")),
+                (net!("10.199.0.0/16"), ip!("10.199.0.2")),
+            ],
+            ..Default::default()
+        };
+        // Inside a rule prefix (host route and subnet route).
+        assert_eq!(
+            policy.prefsrc_for(&net!("10.99.0.3/32")),
+            Some(ip!("10.99.0.2"))
+        );
+        assert_eq!(
+            policy.prefsrc_for(&net!("10.199.4.0/24")),
+            Some(ip!("10.199.0.2"))
+        );
+        // Outside every rule prefix.
+        assert_eq!(policy.prefsrc_for(&net!("192.168.10.0/24")), None);
+        assert_eq!(policy.prefsrc_for(&net!("0.0.0.0/0")), None);
+        // A shorter-mask route covering the rule prefix does not match.
+        assert_eq!(policy.prefsrc_for(&net!("10.0.0.0/8")), None);
+        // Rule-prefix-length route matches exactly.
+        assert_eq!(
+            policy.prefsrc_for(&net!("10.99.0.0/16")),
+            Some(ip!("10.99.0.2"))
+        );
+        // Empty policy never matches.
+        assert_eq!(
+            FibPolicy::default().prefsrc_for(&net!("10.99.0.3/32")),
+            None
+        );
+    }
 
     #[test]
     fn fib_policy_proto_id_unset() {

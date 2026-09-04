@@ -79,7 +79,7 @@ pub(crate) fn ip_route_install(
         IpNetwork::V6(_) => AddressFamily::Inet6,
     };
     let nexthops = netlink_nexthops(af, route.nexthops.iter(), interfaces);
-    let msg = RouteMessageBuilder::<IpAddr>::new()
+    let mut msg = RouteMessageBuilder::<IpAddr>::new()
         .destination_prefix(prefix.ip(), prefix.prefix())
         .unwrap()
         .protocol(protocol)
@@ -89,8 +89,11 @@ pub(crate) fn ip_route_install(
             RouteKind::Unreachable => RouteType::Unreachable,
             RouteKind::Prohibit => RouteType::Prohibit,
         })
-        .multipath(nexthops)
-        .build();
+        .multipath(nexthops);
+    if let Some(addr) = policy.prefsrc_for(prefix) {
+        msg = msg.pref_source(addr).unwrap();
+    }
+    let msg = msg.build();
 
     // Enqueue netlink request.
     netlink_tx.send(NetlinkRequest::RouteAdd(msg)).unwrap();
