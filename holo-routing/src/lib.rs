@@ -140,6 +140,7 @@ impl Master {
                     self.rib.process_rib_update_queue(
                         &self.interfaces,
                         &self.netlink_tx,
+                        &self.shared.fib_policy,
                     );
                 }
                 EventMsg::BirtUpdate => {
@@ -247,7 +248,7 @@ pub fn start(
 
         // Purge stale routes potentially left behind by a previous Holo
         // instance.
-        netlink::purge_stale_routes(&netlink_handle).await;
+        netlink::purge_stale_routes(&netlink_handle, &shared.fib_policy).await;
 
         // Start netlink Tx task.
         let netlink_tx_task = tokio::task::spawn(async move {
@@ -291,7 +292,10 @@ pub fn start(
             );
 
             // Uninstall all routes before exiting.
-            master.rib.route_uninstall_all(&master.netlink_tx);
+            master.rib.route_uninstall_all(
+                &master.netlink_tx,
+                &master.shared.fib_policy,
+            );
             drop(master.netlink_tx);
             let _ = tokio::runtime::Handle::current().block_on(netlink_tx_task);
         });

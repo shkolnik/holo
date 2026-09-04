@@ -11,7 +11,7 @@ use capctl::caps::CapState;
 use futures::TryStreamExt;
 use holo_utils::mpls::Label;
 use holo_utils::protocol::Protocol;
-use holo_utils::southbound::{Nexthop, RouteKind};
+use holo_utils::southbound::{FibPolicy, Nexthop, RouteKind};
 use ipnetwork::IpNetwork;
 use netlink_packet_core::ErrorMessage;
 use netlink_packet_route::AddressFamily;
@@ -70,9 +70,10 @@ pub(crate) fn ip_route_install(
     prefix: &IpNetwork,
     route: &Route,
     interfaces: &Interfaces,
+    policy: &FibPolicy,
 ) {
     // Create netlink message.
-    let protocol = netlink_protocol(route.protocol);
+    let protocol = netlink_protocol(route.protocol, policy);
     let af = match prefix {
         IpNetwork::V4(_) => AddressFamily::Inet,
         IpNetwork::V6(_) => AddressFamily::Inet6,
@@ -99,9 +100,10 @@ pub(crate) fn ip_route_uninstall(
     netlink_tx: &UnboundedSender<NetlinkRequest>,
     prefix: &IpNetwork,
     protocol: Protocol,
+    policy: &FibPolicy,
 ) {
     // Create netlink message.
-    let protocol = netlink_protocol(protocol);
+    let protocol = netlink_protocol(protocol, policy);
     let msg = RouteMessageBuilder::<IpAddr>::new()
         .destination_prefix(prefix.ip(), prefix.prefix())
         .unwrap()
@@ -118,6 +120,7 @@ pub(crate) fn mpls_route_install(
     local_label: Label,
     route: &Route,
     interfaces: &Interfaces,
+    policy: &FibPolicy,
 ) {
     // Create netlink message.
     let label = MplsLabel {
@@ -126,7 +129,7 @@ pub(crate) fn mpls_route_install(
         bottom_of_stack: true,
         ttl: 0,
     };
-    let protocol = netlink_protocol(route.protocol);
+    let protocol = netlink_protocol(route.protocol, policy);
     let nexthops = netlink_nexthops(
         AddressFamily::Mpls,
         route.nexthops.iter(),
@@ -146,6 +149,7 @@ pub(crate) fn mpls_route_uninstall(
     netlink_tx: &UnboundedSender<NetlinkRequest>,
     local_label: Label,
     protocol: Protocol,
+    policy: &FibPolicy,
 ) {
     // Create netlink message.
     let label = MplsLabel {
@@ -154,7 +158,7 @@ pub(crate) fn mpls_route_uninstall(
         bottom_of_stack: true,
         ttl: 0,
     };
-    let protocol = netlink_protocol(protocol);
+    let protocol = netlink_protocol(protocol, policy);
     let msg = RouteMessageBuilder::<MplsLabel>::new()
         .label(label)
         .protocol(protocol)
@@ -172,29 +176,44 @@ pub(crate) fn mpls_route_uninstall(
 // process may exit abruptly, leaving routes in the kernel routing table.
 //
 // This function should be called during startup to clean up any such stale
-// routes. It filters routes by protocol type (e.g., BGP, OSPF), assuming that
-// only Holo installs routes using those protocols.
-pub(crate) async fn purge_stale_routes(handle: &Handle) {
+// routes. It filters routes by protocol type: the embedder's private range when
+// `FibPolicy.proto_base` is set, otherwise the well-known ids (e.g., BGP, OSPF),
+// assuming that only Holo installs routes using those protocols.
+pub(crate) async fn purge_stale_routes(handle: &Handle, policy: &FibPolicy) {
+    let range = policy.proto_range();
     let msg = RouteMessageBuilder::<IpAddr>::new().build();
     let mut routes = handle.route().get(msg).execute();
+    let mut count = 0usize;
     while let Ok(Some(route)) = routes.try_next().await {
         // Only target routes installed by Holo.
         let protocol = route.header.protocol;
-        if !matches!(
-            protocol,
-            RouteProtocol::Bgp
-                | RouteProtocol::Isis
-                | RouteProtocol::Ospf
-                | RouteProtocol::Rip
-                | RouteProtocol::Static
-        ) {
+        let owned = match &range {
+            Some(range) => {
+                matches!(protocol, RouteProtocol::Other(id) if range.contains(&id))
+            }
+            None => matches!(
+                protocol,
+                RouteProtocol::Bgp
+                    | RouteProtocol::Isis
+                    | RouteProtocol::Ospf
+                    | RouteProtocol::Rip
+                    | RouteProtocol::Static
+            ),
+        };
+        if !owned {
             continue;
         }
 
         // Attempt to uninstall the stale route.
-        if let Err(error) = handle.route().del(route).execute().await {
-            warn!(?protocol, ?error, "failed to purge stale route");
+        match handle.route().del(route).execute().await {
+            Ok(()) => count += 1,
+            Err(error) => {
+                warn!(?protocol, ?error, "failed to purge stale route");
+            }
         }
+    }
+    if count > 0 {
+        warn!(count, "purged stale routes left by an unclean exit");
     }
 }
 
@@ -222,7 +241,10 @@ pub(crate) fn init() -> Handle {
 
 // ===== helper functions =====
 
-fn netlink_protocol(protocol: Protocol) -> RouteProtocol {
+fn netlink_protocol(protocol: Protocol, policy: &FibPolicy) -> RouteProtocol {
+    if let Some(id) = policy.proto_id(protocol) {
+        return RouteProtocol::Other(id);
+    }
     match protocol {
         Protocol::BGP => RouteProtocol::Bgp,
         Protocol::ISIS => RouteProtocol::Isis,

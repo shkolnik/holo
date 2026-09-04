@@ -269,3 +269,74 @@ impl ToYang for IsisRouteType {
         }
     }
 }
+
+/// FIB install policy supplied by the embedder (holod leaves it default).
+#[derive(Clone, Debug, Default)]
+pub struct FibPolicy {
+    /// When set, routes are installed with kernel protocol id `base + k` (k: 0 = OSPF,
+    /// 1 = static, 2 = BGP; every other protocol → `base + 3`) instead of the well-known
+    /// ids, and startup purge / shutdown uninstall touch ONLY that range.
+    pub proto_base: Option<u8>,
+}
+
+// ===== impl FibPolicy =====
+
+impl FibPolicy {
+    /// The kernel protocol id for `protocol` under this policy, or None = holo's default mapping.
+    pub fn proto_id(&self, protocol: Protocol) -> Option<u8> {
+        let base = self.proto_base?;
+        Some(match protocol {
+            Protocol::OSPFV2 | Protocol::OSPFV3 => base,
+            Protocol::STATIC => base + 1,
+            Protocol::BGP => base + 2,
+            _ => base + 3,
+        })
+    }
+
+    /// The kernel protocol id range this policy owns, or None when unset.
+    pub fn proto_range(&self) -> Option<std::ops::RangeInclusive<u8>> {
+        self.proto_base.map(|b| b..=b + 3)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fib_policy_proto_id_unset() {
+        let policy = FibPolicy::default();
+        assert_eq!(policy.proto_id(Protocol::OSPFV2), None);
+        assert_eq!(policy.proto_id(Protocol::STATIC), None);
+        assert_eq!(policy.proto_id(Protocol::BGP), None);
+        assert_eq!(policy.proto_range(), None);
+    }
+
+    #[test]
+    fn fib_policy_proto_id_base() {
+        let policy = FibPolicy {
+            proto_base: Some(201),
+            ..Default::default()
+        };
+        assert_eq!(policy.proto_id(Protocol::OSPFV2), Some(201));
+        assert_eq!(policy.proto_id(Protocol::OSPFV3), Some(201));
+        assert_eq!(policy.proto_id(Protocol::STATIC), Some(202));
+        assert_eq!(policy.proto_id(Protocol::BGP), Some(203));
+        assert_eq!(policy.proto_id(Protocol::ISIS), Some(204));
+        assert_eq!(policy.proto_id(Protocol::RIPV2), Some(204));
+    }
+
+    #[test]
+    fn fib_policy_proto_range() {
+        let policy = FibPolicy {
+            proto_base: Some(201),
+            ..Default::default()
+        };
+        let range = policy.proto_range().unwrap();
+        assert_eq!(range, 201..=204);
+        assert!(range.contains(&201));
+        assert!(range.contains(&204));
+        assert!(!range.contains(&200));
+        assert!(!range.contains(&205));
+    }
+}

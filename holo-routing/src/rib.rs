@@ -15,8 +15,8 @@ use holo_utils::ip::{AddressFamily, IpAddrExt};
 use holo_utils::mpls::Label;
 use holo_utils::protocol::Protocol;
 use holo_utils::southbound::{
-    LabelInstallMsg, LabelUninstallMsg, Nexthop, RouteKeyMsg, RouteKind,
-    RouteMsg, RouteOpaqueAttrs,
+    FibPolicy, LabelInstallMsg, LabelUninstallMsg, Nexthop, RouteKeyMsg,
+    RouteKind, RouteMsg, RouteOpaqueAttrs,
 };
 use ipnetwork::IpNetwork;
 use prefix_trie::joint::map::JointPrefixMap;
@@ -314,6 +314,7 @@ impl Rib {
         &mut self,
         interfaces: &Interfaces,
         netlink_tx: &UnboundedSender<NetlinkRequest>,
+        policy: &FibPolicy,
     ) {
         // Process IP update queue.
         while let Some(prefix) = self.ip_update_queue.pop_first() {
@@ -338,7 +339,7 @@ impl Rib {
                     // Install the route using the netlink handle.
                     if route.protocol != Protocol::DIRECT {
                         netlink::ip_route_install(
-                            netlink_tx, &prefix, route, interfaces,
+                            netlink_tx, &prefix, route, interfaces, policy,
                         );
                     }
 
@@ -358,7 +359,7 @@ impl Rib {
                     // Uninstall the old best route using the netlink handle.
                     if protocol != Protocol::DIRECT {
                         netlink::ip_route_uninstall(
-                            netlink_tx, &prefix, protocol,
+                            netlink_tx, &prefix, protocol, policy,
                         );
                     }
 
@@ -386,6 +387,7 @@ impl Rib {
                     netlink_tx,
                     label,
                     route.protocol,
+                    policy,
                 );
 
                 // Effectively remove the MPLS route.
@@ -394,7 +396,9 @@ impl Rib {
             }
 
             // Install the route using the netlink handle.
-            netlink::mpls_route_install(netlink_tx, label, route, interfaces);
+            netlink::mpls_route_install(
+                netlink_tx, label, route, interfaces, policy,
+            );
         }
 
         // Reevaluate all registered nexthops.
@@ -504,6 +508,7 @@ impl Rib {
     pub(crate) fn route_uninstall_all(
         &mut self,
         netlink_tx: &UnboundedSender<NetlinkRequest>,
+        policy: &FibPolicy,
     ) {
         for (prefix, rib_prefix) in &self.ip {
             if let Some(route) = rib_prefix
@@ -514,11 +519,17 @@ impl Rib {
                     netlink_tx,
                     &prefix,
                     route.protocol,
+                    policy,
                 );
             }
         }
         for (label, route) in &self.mpls {
-            netlink::mpls_route_uninstall(netlink_tx, *label, route.protocol);
+            netlink::mpls_route_uninstall(
+                netlink_tx,
+                *label,
+                route.protocol,
+                policy,
+            );
         }
     }
 }

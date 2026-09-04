@@ -26,6 +26,7 @@ use holo_utils::keychain::Keychains;
 use holo_utils::mpls::LabelManager;
 use holo_utils::policy::{MatchSets, Policies};
 use holo_utils::protocol::Protocol;
+use holo_utils::southbound::FibPolicy;
 use holo_utils::sr::SrCfg;
 use holo_utils::task::Task;
 use serde::de::DeserializeOwned;
@@ -108,6 +109,8 @@ pub struct InstanceShared {
     pub bier_config: Arc<BierCfg>,
     // Event recorder configuration.
     pub event_recorder_config: Option<event_recorder::Config>,
+    // FIB install policy (kernel route-protocol ids, preferred sources).
+    pub fib_policy: Arc<FibPolicy>,
 }
 
 /// Instance input message.
