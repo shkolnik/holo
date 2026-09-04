@@ -168,6 +168,7 @@ impl std::fmt::Debug for InstanceShared {
             .field("policies", &self.policies)
             .field("sr_config", &self.sr_config)
             .field("bier_config", &self.bier_config)
+            .field("fib_policy", &self.fib_policy)
             .finish()
     }
 }

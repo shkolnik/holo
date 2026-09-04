@@ -302,13 +302,22 @@ impl FibPolicy {
             Protocol::OSPFV2 | Protocol::OSPFV3 => base,
             Protocol::STATIC => base + 1,
             Protocol::BGP => base + 2,
-            _ => base + 3,
+            _ => Self::proto_top(base),
         })
     }
 
     /// The kernel protocol id range this policy owns, or None when unset.
     pub fn proto_range(&self) -> Option<std::ops::RangeInclusive<u8>> {
-        self.proto_base.map(|b| b..=b + 3)
+        self.proto_base.map(|b| b..=Self::proto_top(b))
+    }
+
+    // Highest id of the owned range. The range must fit in a u8: in release
+    // builds a wrapped `base + 3` would silently yield an empty purge range
+    // and install routes as RTPROT_UNSPEC/REDIRECT, so refuse loudly instead.
+    fn proto_top(base: u8) -> u8 {
+        base.checked_add(3).expect(
+            "FibPolicy.proto_base must be <= 252 (range is base..=base+3)",
+        )
     }
 }
 
@@ -341,6 +350,18 @@ mod tests {
         assert_eq!(policy.prefsrc_for(&net!("0.0.0.0/0")), None);
         // A shorter-mask route covering the rule prefix does not match.
         assert_eq!(policy.prefsrc_for(&net!("10.0.0.0/8")), None);
+        // Same, with the covering route's network address INSIDE the rule
+        // block (a summary route aligned to the rule): `contains()` alone
+        // would accept it; only the mask-length guard rejects it.
+        let aligned = FibPolicy {
+            prefsrc: vec![(net!("10.0.0.0/16"), ip!("10.0.0.2"))],
+            ..Default::default()
+        };
+        assert_eq!(aligned.prefsrc_for(&net!("10.0.0.0/8")), None);
+        assert_eq!(
+            aligned.prefsrc_for(&net!("10.0.0.0/16")),
+            Some(ip!("10.0.0.2"))
+        );
         // Rule-prefix-length route matches exactly.
         assert_eq!(
             policy.prefsrc_for(&net!("10.99.0.0/16")),

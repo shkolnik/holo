@@ -321,3 +321,53 @@ fn netlink_label_stack(labels: &[Label]) -> Vec<MplsLabel> {
     }
     labels
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn netlink_protocol_private_range() {
+        let policy = FibPolicy {
+            proto_base: Some(201),
+            ..Default::default()
+        };
+        assert_eq!(
+            netlink_protocol(Protocol::OSPFV2, &policy),
+            RouteProtocol::Other(201)
+        );
+        assert_eq!(
+            netlink_protocol(Protocol::OSPFV3, &policy),
+            RouteProtocol::Other(201)
+        );
+        assert_eq!(
+            netlink_protocol(Protocol::STATIC, &policy),
+            RouteProtocol::Other(202)
+        );
+        assert_eq!(
+            netlink_protocol(Protocol::BGP, &policy),
+            RouteProtocol::Other(203)
+        );
+        assert_eq!(
+            netlink_protocol(Protocol::ISIS, &policy),
+            RouteProtocol::Other(204)
+        );
+    }
+
+    #[test]
+    fn netlink_protocol_default_mapping() {
+        let policy = FibPolicy::default();
+        assert_eq!(
+            netlink_protocol(Protocol::OSPFV2, &policy),
+            RouteProtocol::Ospf
+        );
+        assert_eq!(
+            netlink_protocol(Protocol::STATIC, &policy),
+            RouteProtocol::Static
+        );
+        assert_eq!(
+            netlink_protocol(Protocol::BGP, &policy),
+            RouteProtocol::Bgp
+        );
+    }
+}
