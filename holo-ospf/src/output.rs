@@ -220,8 +220,14 @@ pub(crate) fn send_lsupd<V>(
 ) where
     V: Version,
 {
-    // Initialize destination address(es).
-    let dst = send_dest_iface(iface, neighbors);
+    // Initialize destination address(es). RFC 2328 says an LS Update sent
+    // from a neighbor's own list - a retransmission (13.5), the reply to an
+    // LS Request (10.7), or the database copy sent back under 13 (8) - goes
+    // directly to that neighbor, not to the interface's multicast group.
+    let dst = match nbr_idx {
+        Some(nbr_idx) => send_dest_nbr(&neighbors[nbr_idx], iface),
+        None => send_dest_iface(iface, neighbors),
+    };
 
     // Calculate maximum packet size.
     let max_size = V::max_packet_size(iface)
