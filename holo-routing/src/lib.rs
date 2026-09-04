@@ -234,13 +234,8 @@ pub fn start(
         // Request information about all interfaces addresses.
         ibus::request_addresses(&master.ibus_tx);
 
-        // Enable IPv4 and IPv6 forwarding in the kernel.
-        if let Err(error) = sysctl::ipv4_forwarding("1") {
-            warn!(%error, "failed to enable IPv4 forwarding");
-        }
-        if let Err(error) = sysctl::ipv6_forwarding("1") {
-            warn!(%error, "failed to enable IPv6 forwarding");
-        }
+        // Forwarding is the embedder's policy (cfab scopes it per interface);
+        // holo-routing never touches it.
 
         // Set the maximum number of MPLS labels available for forwarding.
         if let Err(error) = sysctl::mpls_platform_labels("1048575") {
