@@ -107,17 +107,17 @@ pub(crate) fn socket_tx(
         // associated with a particular session.  The source port number SHOULD
         // be unique among all BFD sessions on the system".
         //
-        // For simplicity's sake, let's use 49152 as the source port for all
-        // sessions. This shouldn't affect protocol operation, as the
-        // remote peer should be able to match the incoming BFD packets
-        // to the correct session regardless of the source port number.
+        // Take the first free port in the range. A fixed port is not enough:
+        // another BFD implementation on the same host may hold it with a
+        // wildcard bind and no SO_REUSEADDR (FRR bfdd binds 0.0.0.0:49152),
+        // which makes every bind on that port fail with EADDRINUSE. Port
+        // uniqueness across sessions is not required for protocol operation,
+        // as the remote peer matches incoming BFD packets to sessions
+        // regardless of the source port number.
         //
         // In any case, a separate Tx socket is required for each session since
         // they can be bound to different addresses.
-        let port = *PORT_SRC_RANGE.start();
-        let sockaddr = SocketAddr::from((addr, port));
-        let socket =
-            capabilities::raise(|| UdpSocket::bind_reuseaddr(sockaddr))?;
+        let socket = socket_tx_bind(addr)?;
 
         // Bind to interface.
         if let Some(ifname) = ifname {
@@ -142,6 +142,34 @@ pub(crate) fn socket_tx(
     {
         Ok(UdpSocket {})
     }
+}
+
+// Binds a Tx socket to `addr` on the first free port of `PORT_SRC_RANGE`.
+#[cfg(not(feature = "testing"))]
+fn socket_tx_bind(addr: IpAddr) -> Result<UdpSocket, std::io::Error> {
+    let mut last_error = None;
+    for port in PORT_SRC_RANGE {
+        let sockaddr = SocketAddr::from((addr, port));
+        match capabilities::raise(|| UdpSocket::bind_reuseaddr(sockaddr)) {
+            Ok(socket) => return Ok(socket),
+            Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => {
+                last_error = Some(error);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    let error = last_error.expect("PORT_SRC_RANGE is non-empty");
+    Err(std::io::Error::new(
+        error.kind(),
+        format!(
+            "no free BFD source port for {} in {}-{}: {}",
+            addr,
+            PORT_SRC_RANGE.start(),
+            PORT_SRC_RANGE.end(),
+            error
+        ),
+    ))
 }
 
 #[cfg(not(feature = "testing"))]
