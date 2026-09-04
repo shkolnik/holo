@@ -168,6 +168,19 @@ pub enum LsaLogReason {
     Purge,
 }
 
+// Operand of an LSA recency comparison: an LSA header paired with the LS age
+// that must be used for it.
+//
+// The age stored in an LSA header is frozen at the time the LSA is created or
+// received; only `Lsa::base_time` tracks how much the copy has aged since. RFC
+// 2328, Section 13.1, requires comparing the *current* LS age of each copy, so
+// locally held LSAs must be wrapped with `LsaCmp::local()`; `LsaCmp::wire()`
+// is only for headers taken straight off the network.
+pub(crate) struct LsaCmp<'a, V: Version> {
+    hdr: &'a V::LsaHdr,
+    age: u16,
+}
+
 // OSPF version-specific code.
 pub trait LsdbVersion<V: Version> {
     // Check if the provided area and/or neighbor can accept the given LSA type.
@@ -284,6 +297,39 @@ where
     }
 }
 
+// ===== impl LsaCmp =====
+
+impl<'a, V> LsaCmp<'a, V>
+where
+    V: Version,
+{
+    // Operand for an LSA the router holds a copy of: an LSDB entry, a
+    // retransmission list entry, a database summary list entry, or an LSA just
+    // decoded from the network. Its age is taken from `Lsa::age()`, which
+    // accounts for the time elapsed since the copy was created or received.
+    pub(crate) fn local(lsa: &'a Lsa<V>) -> Self {
+        LsaCmp {
+            hdr: &lsa.hdr,
+            age: lsa.age(),
+        }
+    }
+
+    // Operand for a bare LSA header received from a neighbor (Database
+    // Description, Link State Request or Link State Acknowledgment packet).
+    // Such a header carries the sender's current age, and no local copy exists
+    // to age it further.
+    pub(crate) fn wire(hdr: &'a V::LsaHdr) -> Self {
+        LsaCmp {
+            hdr,
+            age: hdr.age(),
+        }
+    }
+
+    fn is_maxage(&self) -> bool {
+        self.age == LSA_MAX_AGE
+    }
+}
+
 // ===== global functions =====
 
 // Compares which LSA is more recent according to the rules specified in Section
@@ -293,18 +339,18 @@ where
 // - Ordering::Greater when `a` is more recent
 // - Ordering::Less when `b` is more recent
 // - Ordering::Equal when the two LSAs are considered to be identical
-pub(crate) fn lsa_compare<V>(a: &V::LsaHdr, b: &V::LsaHdr) -> Ordering
+pub(crate) fn lsa_compare<V>(a: LsaCmp<'_, V>, b: LsaCmp<'_, V>) -> Ordering
 where
     V: Version,
 {
-    let a_seq_no = a.seq_no() as i32;
-    let b_seq_no = b.seq_no() as i32;
+    let a_seq_no = a.hdr.seq_no() as i32;
+    let b_seq_no = b.hdr.seq_no() as i32;
     let cmp = a_seq_no.cmp(&b_seq_no);
     if cmp != Ordering::Equal {
         return cmp;
     }
 
-    let cmp = a.cksum().cmp(&b.cksum());
+    let cmp = a.hdr.cksum().cmp(&b.hdr.cksum());
     if cmp != Ordering::Equal {
         return cmp;
     }
@@ -315,8 +361,8 @@ where
         return Ordering::Less;
     }
 
-    if a.age().abs_diff(b.age()) > LSA_MAX_AGE_DIFF {
-        return b.age().cmp(&a.age());
+    if a.age.abs_diff(b.age) > LSA_MAX_AGE_DIFF {
+        return b.age.cmp(&a.age);
     }
 
     Ordering::Equal
@@ -824,7 +870,7 @@ fn rxmt_lists_remove<V>(
                     nbr.lists.ls_rxmt.entry(lsa.hdr.key())
                 {
                     let old_lsa = o.get();
-                    if lsa_compare::<V>(&old_lsa.hdr, &lsa.hdr)
+                    if lsa_compare(LsaCmp::local(old_lsa), LsaCmp::local(lsa))
                         == Ordering::Less
                     {
                         o.remove();
@@ -890,4 +936,177 @@ where
                 .next()
                 .is_some_and(|nbr| nbr.state == nsm::State::Full)
     })
+}
+
+// ===== tests =====
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use const_addrs::ip4;
+
+    use super::*;
+    use crate::ospfv2::packet::iana::{LsaRouterLinkType, Options};
+    use crate::ospfv2::packet::lsa::{LsaBody, LsaRouter, LsaRouterLink};
+    use crate::version::Ospfv2;
+
+    // Builds a Router-LSA whose header carries the given age.
+    fn router_lsa(age: u16, seq_no: u32) -> Lsa<Ospfv2> {
+        let mut lsa = Lsa::<Ospfv2>::new(
+            age,
+            Some(Options::E),
+            ip4!("1.1.1.1"),
+            ip4!("1.1.1.1"),
+            seq_no,
+            LsaBody::Router(LsaRouter {
+                flags: Default::default(),
+                links: vec![LsaRouterLink {
+                    link_type: LsaRouterLinkType::StubNetwork,
+                    link_id: ip4!("10.0.1.0"),
+                    link_data: ip4!("255.255.255.0"),
+                    metric: 10,
+                }],
+            }),
+        );
+        // Age the copy explicitly in every test, never through the ambient
+        // clock, so the results don't depend on the build's feature flags.
+        lsa.base_time = None;
+        lsa
+    }
+
+    // Marks an LSA as installed `secs` seconds ago.
+    fn installed_secs_ago(lsa: &mut Lsa<Ospfv2>, secs: u64) {
+        lsa.base_time = Some(
+            Instant::now()
+                .checked_sub(Duration::from_secs(secs))
+                .expect("monotonic clock younger than the simulated LSA age"),
+        );
+    }
+
+    // The database copy and the copy a neighbor floods back are the same LSA
+    // instance; the neighbor stamps the current age on the wire, while the
+    // header stored locally still holds the age at install time.
+    //
+    // Comparing the stored header field (what the code did before this fix)
+    // makes each router judge its own copy more recent once the two ages drift
+    // apart by more than MaxAgeDiff, on both sides at once.
+    #[test]
+    fn lsa_compare_same_instance_aged_copy() {
+        let mut db_copy = router_lsa(1, LSA_INIT_SEQ_NO);
+        installed_secs_ago(&mut db_copy, 1000);
+        let rcvd = router_lsa(1001, LSA_INIT_SEQ_NO);
+
+        // Same instance: only the age differs.
+        assert_eq!(db_copy.hdr.seq_no(), rcvd.hdr.seq_no());
+        assert_eq!(db_copy.hdr.cksum(), rcvd.hdr.cksum());
+        assert_eq!(db_copy.age(), 1001);
+        assert_eq!(rcvd.age(), 1001);
+
+        // Old behavior, kept here as a regression witness: using the frozen
+        // header of the database copy declares it more recent (Greater), which
+        // triggers the RFC 2328 13-(8) "send the database copy back" reply on
+        // every received packet.
+        assert_eq!(
+            lsa_compare::<Ospfv2>(
+                LsaCmp::wire(&db_copy.hdr),
+                LsaCmp::wire(&rcvd.hdr)
+            ),
+            Ordering::Greater
+        );
+
+        // New behavior: the database copy is compared with its current age, so
+        // the two copies are recognized as the same instance.
+        assert_eq!(
+            lsa_compare::<Ospfv2>(
+                LsaCmp::local(&db_copy),
+                LsaCmp::local(&rcvd)
+            ),
+            Ordering::Equal
+        );
+    }
+
+    // A real age difference larger than MaxAgeDiff must still order the two
+    // copies, in both directions.
+    #[test]
+    fn lsa_compare_genuine_age_difference() {
+        // Database copy installed 5 seconds ago, neighbor's copy is 1000
+        // seconds old: the database copy is more recent.
+        let mut db_copy = router_lsa(0, LSA_INIT_SEQ_NO);
+        installed_secs_ago(&mut db_copy, 5);
+        let rcvd = router_lsa(1000, LSA_INIT_SEQ_NO);
+        assert_eq!(
+            lsa_compare::<Ospfv2>(
+                LsaCmp::local(&db_copy),
+                LsaCmp::wire(&rcvd.hdr)
+            ),
+            Ordering::Greater
+        );
+
+        // The other way around: the database copy is 1500 seconds old and the
+        // received copy is fresh.
+        let mut db_copy = router_lsa(0, LSA_INIT_SEQ_NO);
+        installed_secs_ago(&mut db_copy, 1500);
+        let rcvd = router_lsa(1, LSA_INIT_SEQ_NO);
+        assert_eq!(
+            lsa_compare::<Ospfv2>(
+                LsaCmp::local(&db_copy),
+                LsaCmp::wire(&rcvd.hdr)
+            ),
+            Ordering::Less
+        );
+    }
+
+    // MaxAge ordering is unchanged, and a database copy that has aged to
+    // MaxAge in place is now recognized as MaxAge too.
+    #[test]
+    fn lsa_compare_maxage() {
+        let db_copy = router_lsa(LSA_MAX_AGE, LSA_INIT_SEQ_NO);
+        let rcvd = router_lsa(1, LSA_INIT_SEQ_NO);
+        assert_eq!(
+            lsa_compare::<Ospfv2>(
+                LsaCmp::local(&db_copy),
+                LsaCmp::wire(&rcvd.hdr)
+            ),
+            Ordering::Greater
+        );
+
+        let db_copy = router_lsa(1, LSA_INIT_SEQ_NO);
+        let rcvd = router_lsa(LSA_MAX_AGE, LSA_INIT_SEQ_NO);
+        assert_eq!(
+            lsa_compare::<Ospfv2>(
+                LsaCmp::local(&db_copy),
+                LsaCmp::wire(&rcvd.hdr)
+            ),
+            Ordering::Less
+        );
+
+        // Aged in place past MaxAge: Lsa::age() saturates at MaxAge.
+        let mut db_copy = router_lsa(1, LSA_INIT_SEQ_NO);
+        installed_secs_ago(&mut db_copy, u64::from(LSA_MAX_AGE) + 400);
+        let rcvd = router_lsa(1, LSA_INIT_SEQ_NO);
+        assert_eq!(db_copy.age(), LSA_MAX_AGE);
+        assert_eq!(
+            lsa_compare::<Ospfv2>(
+                LsaCmp::local(&db_copy),
+                LsaCmp::wire(&rcvd.hdr)
+            ),
+            Ordering::Greater
+        );
+    }
+
+    // The sequence number still takes precedence over any age difference.
+    #[test]
+    fn lsa_compare_seq_no_precedence() {
+        let mut db_copy = router_lsa(1, LSA_INIT_SEQ_NO);
+        installed_secs_ago(&mut db_copy, 3000);
+        let rcvd = router_lsa(1, LSA_INIT_SEQ_NO + 1);
+        assert_eq!(
+            lsa_compare::<Ospfv2>(
+                LsaCmp::local(&db_copy),
+                LsaCmp::wire(&rcvd.hdr)
+            ),
+            Ordering::Less
+        );
+    }
 }

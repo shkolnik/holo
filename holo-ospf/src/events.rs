@@ -24,7 +24,7 @@ use crate::gr::GrExitReason;
 use crate::instance::{InstanceArenas, InstanceUpView};
 use crate::interface::{Interface, VirtualLinkKey, ism};
 use crate::lsdb::{
-    self, LsaEntry, LsaEntryFlags, LsaOriginateEvent, lsa_compare,
+    self, LsaCmp, LsaEntry, LsaEntryFlags, LsaOriginateEvent, lsa_compare,
 };
 use crate::neighbor::{LastDbDesc, Neighbor, RxmtPacketType, nsm};
 use crate::northbound::notification;
@@ -638,7 +638,8 @@ where
             nbr.lists.db_summary.entry(lsa_key)
         {
             let db_summ_lsa = o.get();
-            if lsa_compare::<V>(&db_summ_lsa.hdr, lsa_hdr) != Ordering::Greater
+            if lsa_compare(LsaCmp::local(db_summ_lsa), LsaCmp::wire(lsa_hdr))
+                != Ordering::Greater
             {
                 o.remove();
             }
@@ -653,7 +654,8 @@ where
             LsaScope::Unknown => unreachable!(),
         };
         if let Some((_, lse)) = lsdb.get(lsa_entries, &lsa_key)
-            && lsa_compare::<V>(&lse.data.hdr, lsa_hdr) != Ordering::Less
+            && lsa_compare(LsaCmp::local(&lse.data), LsaCmp::wire(lsa_hdr))
+                != Ordering::Less
         {
             continue;
         }
@@ -886,7 +888,8 @@ where
 
     // (5 cont.) There is no database copy, or the received LSA is more
     // recent than the database copy.
-    let lsa_cmp = lse.map(|lse| lsa_compare::<V>(&lse.data.hdr, &lsa.hdr));
+    let lsa_cmp = lse
+        .map(|lse| lsa_compare(LsaCmp::local(&lse.data), LsaCmp::local(&lsa)));
     if matches!(lsa_cmp, None | Some(Ordering::Less)) {
         // (5.a) MinLSArrival check.
         if let Some(lse) = lse
@@ -1097,7 +1100,9 @@ where
         if let btree_map::Entry::Occupied(o) = nbr.lists.ls_rxmt.entry(lsa_key)
         {
             let lsa = o.get();
-            if lsa_compare::<V>(&lsa.hdr, lsa_hdr) == Ordering::Equal {
+            if lsa_compare(LsaCmp::local(lsa), LsaCmp::wire(lsa_hdr))
+                == Ordering::Equal
+            {
                 o.remove();
                 nbr.rxmt_lsupd_stop_check();
             } else if instance.config.trace_opts.flooding {

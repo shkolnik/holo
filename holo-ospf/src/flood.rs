@@ -108,7 +108,10 @@ where
             ) {
                 (Occupied(o), _) | (_, Occupied(o)) => {
                     let req = o.get();
-                    let cmp = lsdb::lsa_compare::<V>(&lsa.hdr, req);
+                    let cmp = lsdb::lsa_compare(
+                        lsdb::LsaCmp::local(lsa),
+                        lsdb::LsaCmp::wire(req),
+                    );
                     match cmp {
                         Ordering::Less => continue,
                         Ordering::Equal | Ordering::Greater => {
