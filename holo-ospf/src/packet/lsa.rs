@@ -105,6 +105,12 @@ where
     // perspective, corresponds to topology-related information (types 1-5,
     // 7).
     fn is_gr_topology_info(&self) -> bool;
+
+    // Return whether the LSA describes this router's own adjacencies (a
+    // Router-LSA or a Network-LSA). These are the LSAs a link failure
+    // changes, and they are exempt from the MinLSInterval origination
+    // throttle: the receiving side's MinLSArrival check is the brake.
+    fn is_adjacency_lsa(&self) -> bool;
 }
 
 // OSPF version-specific code.

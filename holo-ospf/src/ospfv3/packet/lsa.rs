@@ -916,6 +916,13 @@ impl LsaTypeVersion for LsaType {
             )
         )
     }
+
+    fn is_adjacency_lsa(&self) -> bool {
+        matches!(
+            self.function_code_normalized(),
+            Some(LsaFunctionCode::Router | LsaFunctionCode::Network)
+        )
+    }
 }
 
 impl std::fmt::Display for LsaType {
@@ -2862,4 +2869,22 @@ fn encode_prefix(prefix: &IpNetwork, buf: &mut BytesMut) {
     let prefix_bytes = prefix.ip().bytes();
     let plen_wire = prefix_wire_len(prefix.prefix());
     buf.put_slice(&prefix_bytes[0..plen_wire]);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn adjacency_lsa_is_router_or_network_only() {
+        // Function codes 1 and 2 in every scope, extended (0xA0xx) or not.
+        for scope in [0x0000u16, 0x2000, 0x4000] {
+            for code in 1..=9u16 {
+                let t = LsaType(scope | code);
+                assert_eq!(t.is_adjacency_lsa(), matches!(code, 1 | 2), "{t:?}");
+                let ext = LsaType(scope | 0x20 | code);
+                assert_eq!(ext.is_adjacency_lsa(), matches!(code, 1 | 2), "{ext:?}");
+            }
+        }
+    }
 }

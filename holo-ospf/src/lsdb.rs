@@ -679,9 +679,16 @@ pub(crate) fn originate_check<V>(
             return;
         }
 
-        // Perform the MinLSInterval check.
-        if lsdb.delayed_orig.contains_key(&lsa_key)
-            || lsa_min_orig_interval_check(old_lse)
+        // Perform the MinLSInterval check. Router-LSAs and Network-LSAs are
+        // exempt: they change when a link fails, and holding them for
+        // MinLSInterval (RFC 2328 12.4, 5 s) means every other router keeps
+        // routing over a link this router already knows is dead until a third
+        // party's dead timer or BFD notices. The receiving side still applies
+        // MinLSArrival (13, step 5a), which bounds the flooding rate on the
+        // wire; that is the split FRR uses.
+        if !lsa_key.lsa_type.is_adjacency_lsa()
+            && (lsdb.delayed_orig.contains_key(&lsa_key)
+                || lsa_min_orig_interval_check(old_lse))
         {
             if instance.config.trace_opts.flooding {
                 Debug::<V>::LsaOriginateMinInterval(&lsa.hdr).log();

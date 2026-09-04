@@ -282,6 +282,13 @@ impl LsaTypeVersion for LsaType {
             )
         )
     }
+
+    fn is_adjacency_lsa(&self) -> bool {
+        matches!(
+            self.type_code(),
+            Some(LsaTypeCode::Router | LsaTypeCode::Network)
+        )
+    }
 }
 
 impl std::fmt::Display for LsaType {
@@ -711,5 +718,20 @@ impl LsaVersion<Self> for Ospfv2 {
 
     fn type4_summary(_extended_lsa: bool) -> LsaType {
         LsaTypeCode::SummaryRouter.into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn adjacency_lsa_is_router_or_network_only() {
+        for code in 1..=11u8 {
+            let t = LsaType(code);
+            assert_eq!(t.is_adjacency_lsa(), matches!(code, 1 | 2), "type {code}");
+        }
+        assert!(!LsaType(0).is_adjacency_lsa());
+        assert!(!LsaType(200).is_adjacency_lsa());
     }
 }
