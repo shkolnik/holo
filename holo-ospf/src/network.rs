@@ -135,7 +135,12 @@ where
             .map_err(|errno| errno.into())
         })
         .await
-        .map_err(IoError::SendError)
+        .map_err(|error| IoError::SendError {
+            ifname: ifname.to_owned(),
+            dst: dst.into(),
+            pkt_type: packet.hdr().pkt_type(),
+            error,
+        })
 }
 
 #[cfg(not(feature = "testing"))]

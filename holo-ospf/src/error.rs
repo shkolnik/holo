@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: MIT
 //
 
-use std::net::Ipv4Addr;
+use std::net::{IpAddr, Ipv4Addr};
 
 use holo_utils::DatabaseError;
 use holo_utils::mpls::LabelManagerError;
@@ -70,7 +70,12 @@ pub enum IoError {
     RecvError(std::io::Error),
     RecvMissingSourceAddr,
     RecvMissingAncillaryData,
-    SendError(std::io::Error),
+    SendError {
+        ifname: String,
+        dst: IpAddr,
+        pkt_type: PacketType,
+        error: std::io::Error,
+    },
 }
 
 // OSPF interface configuration errors.
@@ -325,8 +330,16 @@ impl IoError {
             IoError::ChecksumOffloadError(enable, error) => {
                 warn!(%enable, error = %with_source(error), "{}", self);
             }
-            IoError::RecvError(error) | IoError::SendError(error) => {
+            IoError::RecvError(error) => {
                 warn!(error = %with_source(error), "{}", self);
+            }
+            IoError::SendError {
+                ifname,
+                dst,
+                pkt_type,
+                error,
+            } => {
+                warn!(%ifname, %dst, ?pkt_type, error = %with_source(error), "{}", self);
             }
             IoError::RecvMissingSourceAddr
             | IoError::RecvMissingAncillaryData => {
@@ -369,7 +382,7 @@ impl std::fmt::Display for IoError {
                     "failed to retrieve ancillary data from received packet"
                 )
             }
-            IoError::SendError(..) => {
+            IoError::SendError { .. } => {
                 write!(f, "failed to send IP packet")
             }
         }
@@ -384,7 +397,7 @@ impl std::error::Error for IoError {
             | IoError::MulticastLeaveError(_, error)
             | IoError::ChecksumOffloadError(_, error)
             | IoError::RecvError(error)
-            | IoError::SendError(error) => Some(error),
+            | IoError::SendError { error, .. } => Some(error),
             _ => None,
         }
     }
