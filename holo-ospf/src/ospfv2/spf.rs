@@ -187,16 +187,19 @@ impl SpfVersion<Self> for Ospfv2 {
             VertexLsa::Router(_parent_lsa) => {
                 // The destination is either a directly connected network or
                 // directly connected router.
-                let (parent_link_pos, _parent_link) = parent_link.unwrap();
+                let (_parent_link_pos, parent_link) = parent_link.unwrap();
 
-                // Get nexthop interface based on the parent's Router-LSA link
-                // position.
+                // Get the nexthop interface from the identity the link carries
+                // (RFC 2328 A.4.2), not from its position in the link list.
+                // The two orderings are built from different predicates and
+                // drift apart whenever an adjacency is still forming, a
+                // multipoint interface has several neighbors, or the LSA is
+                // stale because MinLSInterval is holding its re-origination.
                 let (iface_idx, iface) = area
                     .interfaces
                     .indexes()
                     .map(|iface_idx| (iface_idx, &interfaces[iface_idx]))
-                    .filter(|(_, iface)| iface.state.neighbors.count() > 0)
-                    .nth(parent_link_pos)
+                    .find(|(_, iface)| iface_matches_link(iface, parent_link))
                     .ok_or(Error::SpfNexthopCalcError(dest_id))?;
 
                 // If the interface is a virtual link, do not resolve the
@@ -715,4 +718,242 @@ fn route_prefix_sids(
     }
 
     prefix_sids
+}
+
+// ===== helpers =====
+
+// The `Link Data` an interface advertises for its own Router-LSA links
+// (RFC 2328 A.4.2): its address, except that an unnumbered point-to-point link
+// carries the ifindex and a virtual link carries the source address chosen for
+// it. This is the Router-LSA emitter's rule read back, so it has to stay in
+// step with `ospfv2/lsdb.rs`.
+fn iface_link_data(
+    link_type: LsaRouterLinkType,
+    unnumbered: bool,
+    ifindex: Option<u32>,
+    primary_addr: Option<Ipv4Addr>,
+    vlink_src_addr: Option<Ipv4Addr>,
+) -> Option<Ipv4Addr> {
+    match link_type {
+        LsaRouterLinkType::VirtualLink => vlink_src_addr,
+        LsaRouterLinkType::PointToPoint if unnumbered => {
+            ifindex.map(Ipv4Addr::from)
+        }
+        LsaRouterLinkType::PointToPoint | LsaRouterLinkType::TransitNetwork => {
+            primary_addr
+        }
+        // A stub link names a prefix, not an interface.
+        LsaRouterLinkType::StubNetwork => None,
+    }
+}
+
+// Whether `iface` is the interface that originated `link`.
+fn iface_matches_link(iface: &Interface<Ospfv2>, link: &LsaRouterLink) -> bool {
+    iface_link_data(
+        link.link_type,
+        iface.system.unnumbered,
+        iface.system.ifindex,
+        iface.system.primary_addr.map(|addr| addr.ip()),
+        iface.state.src_addr,
+    ) == Some(link.link_data)
+}
+
+// ===== tests =====
+
+#[cfg(test)]
+mod tests {
+    use const_addrs::ip4;
+
+    use super::*;
+
+    // The two facts resolution needs from an interface, plus the neighbor
+    // count the superseded positional rule filtered on.
+    struct Iface {
+        name: &'static str,
+        link_type: LsaRouterLinkType,
+        unnumbered: bool,
+        ifindex: Option<u32>,
+        primary_addr: Option<Ipv4Addr>,
+        vlink_src_addr: Option<Ipv4Addr>,
+        neighbors: usize,
+    }
+
+    fn broadcast(
+        name: &'static str,
+        primary_addr: Ipv4Addr,
+        neighbors: usize,
+    ) -> Iface {
+        Iface {
+            name,
+            link_type: LsaRouterLinkType::TransitNetwork,
+            unnumbered: false,
+            ifindex: None,
+            primary_addr: Some(primary_addr),
+            vlink_src_addr: None,
+            neighbors,
+        }
+    }
+
+    // Resolution as it now is: by the identity the link carries.
+    fn by_identity(
+        ifaces: &[Iface],
+        link_type: LsaRouterLinkType,
+        link_data: Ipv4Addr,
+    ) -> Option<&'static str> {
+        ifaces
+            .iter()
+            .find(|iface| {
+                iface_link_data(
+                    link_type,
+                    iface.unnumbered,
+                    iface.ifindex,
+                    iface.primary_addr,
+                    iface.vlink_src_addr,
+                ) == Some(link_data)
+            })
+            .map(|iface| iface.name)
+    }
+
+    // Resolution as it was: by position among the interfaces that have any
+    // neighbor, counted against the link's position in the Router-LSA.
+    fn by_position(ifaces: &[Iface], link_pos: usize) -> Option<&'static str> {
+        ifaces
+            .iter()
+            .filter(|iface| iface.neighbors > 0)
+            .nth(link_pos)
+            .map(|iface| iface.name)
+    }
+
+    // RFC 2328 A.4.2, one case per link type. A mistake here is invisible at
+    // runtime, because the wrong answer is another live interface.
+    #[test]
+    fn link_data_follows_the_emitter() {
+        let addr = ip4!("10.199.3.1");
+        let src = ip4!("10.0.0.1");
+
+        assert_eq!(
+            iface_link_data(
+                LsaRouterLinkType::TransitNetwork,
+                false,
+                Some(7),
+                Some(addr),
+                None
+            ),
+            Some(addr)
+        );
+        assert_eq!(
+            iface_link_data(
+                LsaRouterLinkType::PointToPoint,
+                false,
+                Some(7),
+                Some(addr),
+                None
+            ),
+            Some(addr)
+        );
+        // Unnumbered point-to-point links carry the ifindex, not an address.
+        assert_eq!(
+            iface_link_data(
+                LsaRouterLinkType::PointToPoint,
+                true,
+                Some(7),
+                Some(addr),
+                None
+            ),
+            Some(Ipv4Addr::from(7u32))
+        );
+        assert_eq!(
+            iface_link_data(
+                LsaRouterLinkType::VirtualLink,
+                false,
+                Some(7),
+                Some(addr),
+                Some(src)
+            ),
+            Some(src)
+        );
+        // A stub link names a prefix; no interface answers for it.
+        assert_eq!(
+            iface_link_data(
+                LsaRouterLinkType::StubNetwork,
+                false,
+                Some(7),
+                Some(addr),
+                None
+            ),
+            None
+        );
+    }
+
+    // A rate-limited Router-LSA still lists a link whose interface is down, so
+    // every surviving link after it sits at a position no live interface
+    // occupies. Measured on hardware as a multi-second blackhole: the lookup
+    // ran off the end and the whole subtree was dropped.
+    #[test]
+    fn stale_lsa_does_not_shift_the_survivor() {
+        // Name order is what decides the positions; these are cfab's.
+        let ifaces = [
+            broadcast("cfab-cl", ip4!("10.199.1.1"), 0), // died, still in LSA
+            broadcast("cfab-cl-b2", ip4!("10.199.3.1"), 1),
+        ];
+
+        // The stale LSA lists cfab-cl at 0 and the survivor at 1.
+        assert_eq!(
+            by_identity(
+                &ifaces,
+                LsaRouterLinkType::TransitNetwork,
+                ip4!("10.199.3.1")
+            ),
+            Some("cfab-cl-b2")
+        );
+        // Positionally the survivor is unreachable: one live interface, and
+        // the link sits at index 1.
+        assert_eq!(by_position(&ifaces, 1), None);
+    }
+
+    // The other direction of the same desync, and the dangerous one. An
+    // adjacency that is not yet Full contributes stub links, which hold no
+    // position, but the interface still has a neighbor. Positions then run
+    // short and the lookup returns a live interface -- the wrong one, with no
+    // error and nothing logged.
+    #[test]
+    fn forming_adjacency_does_not_silently_pick_the_wrong_interface() {
+        let ifaces = [
+            broadcast("eth0", ip4!("10.0.1.1"), 1), // neighbor in 2-Way: stub
+            broadcast("eth1", ip4!("10.0.2.1"), 1), // Full: transit at pos 0
+        ];
+
+        assert_eq!(
+            by_identity(
+                &ifaces,
+                LsaRouterLinkType::TransitNetwork,
+                ip4!("10.0.2.1")
+            ),
+            Some("eth1")
+        );
+        assert_eq!(by_position(&ifaces, 0), Some("eth0"));
+    }
+
+    // A point-to-multipoint interface contributes one link per fully adjacent
+    // neighbor, so positions outrun the interface list with nothing stale and
+    // no adjacency forming.
+    #[test]
+    fn multipoint_interface_answers_for_each_of_its_links() {
+        let ifaces = [Iface {
+            link_type: LsaRouterLinkType::PointToPoint,
+            ..broadcast("eth0", ip4!("10.0.1.1"), 2)
+        }];
+
+        for _ in 0..2 {
+            assert_eq!(
+                by_identity(
+                    &ifaces,
+                    LsaRouterLinkType::PointToPoint,
+                    ip4!("10.0.1.1")
+                ),
+                Some("eth0")
+            );
+        }
+        assert_eq!(by_position(&ifaces, 1), None);
+    }
 }
