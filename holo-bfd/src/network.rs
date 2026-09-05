@@ -50,8 +50,12 @@ pub(crate) fn socket_rx(
         let port = policy.port(path_type);
         let addr = IpAddr::unspecified(af);
         let sockaddr = SocketAddr::from((addr, port));
+        // No SO_REUSEADDR: the Rx socket must never be shared. Another BFD
+        // implementation binding the same wildcard address with SO_REUSEADDR
+        // would otherwise succeed and take every packet, silently, whichever
+        // of the two bound last.
         let socket =
-            capabilities::raise(|| UdpSocket::bind_reuseaddr(sockaddr))?;
+            capabilities::raise(|| UdpSocket::bind_exclusive(sockaddr))?;
 
         // Set socket options.
         match path_type {

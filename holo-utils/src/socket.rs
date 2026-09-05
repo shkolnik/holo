@@ -296,6 +296,13 @@ pub trait UdpSocketExt: SocketExt {
     // option is set before binding.
     fn bind_reuseaddr(addr: SocketAddr) -> Result<UdpSocket>;
 
+    // Creates a UDP socket bound to the given address, without `SO_REUSEADDR`.
+    //
+    // The bind is then also the availability check: the kernel lets two UDP
+    // sockets share an address only when both set `SO_REUSEADDR`, so without it
+    // a second binder gets EADDRINUSE instead of silently stealing the traffic.
+    fn bind_exclusive(addr: SocketAddr) -> Result<UdpSocket>;
+
     // Sets the value of the IPV6_MULTICAST_HOPS option for this socket.
     fn set_ipv6_multicast_hopcount(&self, hopcount: u8) -> Result<()> {
         let optval = hopcount as c_int;
@@ -452,6 +459,19 @@ impl UdpSocketExt for UdpSocket {
         let socket = Socket::new(domain, Type::DGRAM, None)?;
         socket.set_nonblocking(true)?;
         socket.set_reuse_address(true)?;
+        socket.bind(&addr.into())?;
+        UdpSocket::from_std(socket.into())
+    }
+
+    fn bind_exclusive(addr: SocketAddr) -> Result<UdpSocket> {
+        use socket2::{Domain, Type};
+
+        let domain = match addr.ip().address_family() {
+            AddressFamily::Ipv4 => Domain::IPV4,
+            AddressFamily::Ipv6 => Domain::IPV6,
+        };
+        let socket = Socket::new(domain, Type::DGRAM, None)?;
+        socket.set_nonblocking(true)?;
         socket.bind(&addr.into())?;
         UdpSocket::from_std(socket.into())
     }
