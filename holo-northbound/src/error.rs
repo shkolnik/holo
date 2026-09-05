@@ -102,11 +102,14 @@ impl Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::Validate(..) => {
-                write!(f, "configuration validation failed")
+            Error::Validate(error) => {
+                write!(f, "configuration validation failed: {error}")
             }
-            Error::Parse { .. } => {
-                write!(f, "failed to parse configuration change")
+            Error::Parse { path, error } => {
+                write!(
+                    f,
+                    "failed to parse configuration change: {path}: {error}"
+                )
             }
             Error::Prepare { path, error } => {
                 write!(
@@ -237,6 +240,44 @@ impl std::error::Error for ApplyError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn validate_error_display_includes_path_and_message() {
+        let error = Error::Validate(ValidationError {
+            path: "/holo-bgp:bgp/global/as".to_owned(),
+            message: "AS number out of range".to_owned(),
+        });
+        let rendered = error.to_string();
+        assert!(
+            rendered.contains("/holo-bgp:bgp/global/as"),
+            "rendered error is missing the offending path: {rendered}"
+        );
+        assert!(
+            rendered.contains("AS number out of range"),
+            "rendered error is missing the validation message: {rendered}"
+        );
+    }
+
+    #[test]
+    fn parse_error_display_includes_path_and_error() {
+        let error = Error::Parse {
+            path:
+                "/holo-bgp:bgp/neighbors/neighbor[remote-address='10.10.0.2']"
+                    .to_owned(),
+            error: ParseError::MissingListKey("remote-address"),
+        };
+        let rendered = error.to_string();
+        assert!(
+            rendered.contains(
+                "/holo-bgp:bgp/neighbors/neighbor[remote-address='10.10.0.2']"
+            ),
+            "rendered error is missing the offending path: {rendered}"
+        );
+        assert!(
+            rendered.contains("missing list key: remote-address"),
+            "rendered error is missing the parse error detail: {rendered}"
+        );
+    }
 
     #[test]
     fn prepare_error_display_includes_path_and_message() {
