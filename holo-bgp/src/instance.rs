@@ -10,7 +10,7 @@ use std::sync::Arc;
 use holo_protocol::{
     InstanceChannelsTx, InstanceShared, MessageReceiver, ProtocolInstance,
 };
-use holo_utils::bgp::AfiSafi;
+use holo_utils::bgp::{AfiSafi, BgpListenPolicy};
 use holo_utils::ibus::IbusMsg;
 use holo_utils::ip::AddressFamily;
 use holo_utils::policy::PolicyType;
@@ -168,7 +168,11 @@ impl Instance {
     fn start(&mut self, router_id: Ipv4Addr) {
         Debug::InstanceStart.log();
 
-        match InstanceState::new(router_id, &self.tx) {
+        match InstanceState::new(
+            router_id,
+            self.shared.bgp_listen_policy,
+            &self.tx,
+        ) {
             Ok(state) => {
                 // Store instance initial state.
                 self.state = Some(state);
@@ -336,12 +340,18 @@ impl ProtocolInstance for Instance {
 impl InstanceState {
     fn new(
         router_id: Ipv4Addr,
+        listen_policy: BgpListenPolicy,
         instance_tx: &InstanceChannelsTx<Instance>,
     ) -> Result<InstanceState, Error> {
         let mut listening_sockets = Vec::new();
 
-        // Create TCP listeners.
-        for af in [AddressFamily::Ipv4, AddressFamily::Ipv6] {
+        // Create TCP listeners, unless the embedder asked for none. Without a
+        // listener every session must be opened by this router, which is why a
+        // passive neighbor is refused at commit time under that policy.
+        for af in [AddressFamily::Ipv4, AddressFamily::Ipv6]
+            .into_iter()
+            .filter(|_| listen_policy.binds_listener())
+        {
             let socket = network::listen_socket(af)
                 .map(Arc::new)
                 .map_err(IoError::TcpSocketError)?;
@@ -600,4 +610,69 @@ fn process_protocol_msg(
     }
 
     Ok(())
+}
+
+#[cfg(all(test, feature = "testing"))]
+mod tests {
+    use holo_utils::bgp::BgpListenPolicy;
+    use holo_utils::ibus::ibus_channels;
+
+    use super::*;
+
+    // Builds the channel set `InstanceState::new` needs. The receivers are
+    // returned so the test keeps them alive for the duration of the call.
+    #[allow(clippy::type_complexity)]
+    fn instance_channels() -> (
+        InstanceChannelsTx<Instance>,
+        (
+            UnboundedReceiver<holo_northbound::api::provider::Notification>,
+            holo_utils::ibus::IbusChannelsRx,
+            ProtocolInputChannelsRx,
+            Receiver<ProtocolOutputMsg>,
+        ),
+    ) {
+        let (nb_tx, nb_rx) = mpsc::unbounded_channel();
+        let (ibus_tx, ibus_rx) = ibus_channels();
+        let (protocol_input_tx, protocol_input_rx) =
+            Instance::protocol_input_channels();
+        let (protocol_output_tx, protocol_output_rx) = mpsc::channel(4);
+        let tx = InstanceChannelsTx::new(
+            nb_tx,
+            ibus_tx,
+            protocol_input_tx,
+            protocol_output_tx,
+        );
+        (tx, (nb_rx, ibus_rx, protocol_input_rx, protocol_output_rx))
+    }
+
+    #[tokio::test]
+    async fn listen_policy_wildcard_binds_both_address_families() {
+        let (tx, _guards) = instance_channels();
+        let state = InstanceState::new(
+            Ipv4Addr::new(1, 1, 1, 1),
+            BgpListenPolicy::Wildcard,
+            &tx,
+        )
+        .unwrap();
+
+        let afs = state
+            .listening_sockets
+            .iter()
+            .map(|task| task.af)
+            .collect::<Vec<_>>();
+        assert_eq!(afs, [AddressFamily::Ipv4, AddressFamily::Ipv6]);
+    }
+
+    #[tokio::test]
+    async fn listen_policy_no_listener_binds_nothing() {
+        let (tx, _guards) = instance_channels();
+        let state = InstanceState::new(
+            Ipv4Addr::new(1, 1, 1, 1),
+            BgpListenPolicy::NoListener,
+            &tx,
+        )
+        .unwrap();
+
+        assert!(state.listening_sockets.is_empty());
+    }
 }
