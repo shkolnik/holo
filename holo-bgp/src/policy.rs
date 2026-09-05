@@ -648,7 +648,7 @@ mod tests {
         match process_policies(
             PolicyType::Import,
             AfiSafi::Ipv4Unicast,
-            net!("10.0.1.0/24").into(),
+            net!("10.0.1.0/24"),
             rpinfo,
             policies,
             &match_sets,
