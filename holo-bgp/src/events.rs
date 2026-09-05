@@ -691,7 +691,7 @@ where
 // and MED 0, then schedules the Decision Process.
 //
 // This mirrors the redistribution origination path (a route in the
-// `Destination::redistribute` slot participates in the Decision Process) but
+// `Destination::local_network` slot participates in the Decision Process) but
 // deliberately bypasses the redistribution import policy. That import policy
 // carries `set-med igp`, which overwrites the MED with the route's IGP cost;
 // a locally-owned identity prefix must advertise MED 0 so it beats a transit
@@ -714,13 +714,14 @@ pub(crate) fn network_originate<A>(
     attrs.base.origin = Origin::Igp;
     attrs.base.med = Some(0);
 
-    // Inject the route into the RIB's redistribute slot. `Protocol(BGP)` marks
-    // it as locally originated (not learned, not redistributed from another
-    // protocol); being "local" it also skips next-hop resolution in the
-    // Decision Process.
+    // Inject the route into the RIB's dedicated local-network slot (kept apart
+    // from the redistribute slot so the two never overwrite each other).
+    // `Protocol(BGP)` marks it as locally originated (not learned, not
+    // redistributed from another protocol); being "local" it also skips
+    // next-hop resolution in the Decision Process.
     let dest = table.prefixes.entry(prefix).or_default();
     let route_attrs = rib.attr_sets.get_route_attr_sets(&attrs);
-    dest.redistribute = Some(Box::new(Redistribute {
+    dest.local_network = Some(Box::new(Redistribute {
         origin: RouteOrigin::Protocol(Protocol::BGP),
         route_type: RouteType::Internal,
         attrs: route_attrs,
@@ -746,15 +747,10 @@ pub(crate) fn network_withdraw<A>(
     let prefix = A::IpNetwork::get(prefix).unwrap();
 
     if let Some(dest) = table.prefixes.get_mut(&prefix) {
-        // Only remove a route we originated (origin BGP), never a route
-        // redistributed from another protocol that shares the same slot.
-        if dest
-            .redistribute
-            .as_ref()
-            .is_some_and(|r| r.origin == RouteOrigin::Protocol(Protocol::BGP))
-        {
-            dest.redistribute = None;
-        }
+        // The local-network slot is dedicated to routes we originated, so it
+        // can be cleared directly; a redistributed route for the same prefix
+        // lives in a separate slot and is untouched.
+        dest.local_network = None;
     }
 
     // Enqueue prefix and schedule the BGP Decision Process.

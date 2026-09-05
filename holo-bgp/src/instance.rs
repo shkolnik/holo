@@ -748,7 +748,7 @@ mod tests {
         instance.system.router_id = Some(Ipv4Addr::new(10, 249, 0, 1));
         instance.update();
 
-        // The RIB must now hold the originated route in the redistribute slot.
+        // The RIB must now hold the originated route in the local-network slot.
         let state = instance.state.as_ref().expect("instance should be up");
         let IpNetwork::V4(prefix_v4) = prefix else {
             unreachable!()
@@ -761,9 +761,9 @@ mod tests {
             .get(&prefix_v4)
             .expect("originated prefix must be present in the RIB");
         let route = dest
-            .redistribute
+            .local_network
             .as_ref()
-            .expect("originated prefix must have a redistribute route");
+            .expect("originated prefix must have a local-network route");
 
         assert_eq!(route.origin, RouteOrigin::Protocol(Protocol::BGP));
         assert_eq!(route.attrs.base.value.origin, Origin::Igp);

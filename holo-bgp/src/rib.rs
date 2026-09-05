@@ -68,7 +68,15 @@ pub struct PrefixCounters {
 pub struct Destination {
     pub local: Option<Box<LocalRoute>>,
     pub adj_rib: BTreeMap<PeerIndex, AdjRib>,
+    // Route pulled in from another protocol via the redistribution import
+    // policy (its MED comes from `set-med igp`, i.e. the source IGP cost).
     pub redistribute: Option<Box<Redistribute>>,
+    // Route originated by a locally-configured `network` statement: origin IGP,
+    // MED 0, and it bypasses the import policy entirely. A distinct slot from
+    // `redistribute` so a prefix that is both network-originated and
+    // independently redistributed keeps both routes as Decision-Process
+    // candidates instead of one silently overwriting the other.
+    pub local_network: Option<Box<Redistribute>>,
 }
 
 #[derive(Debug, Default)]
@@ -873,7 +881,11 @@ pub(crate) fn best_path<A>(
 where
     A: AddressFamily,
 {
-    // Collect the post-policy Adj-RIB-In routes and the redistributed route.
+    // Collect the post-policy Adj-RIB-In routes, the redistributed route, and
+    // the locally-originated `network` route. The last two live in separate
+    // slots, so a prefix that is both redistributed and network-originated
+    // contributes both as candidates and the Decision Process picks between
+    // them on merit (the MED-0 local route normally winning).
     let candidates = dest
         .adj_rib
         .values_mut()
@@ -889,6 +901,13 @@ where
             })
         })
         .chain(dest.redistribute.as_mut().map(|r| Candidate {
+            origin: r.origin,
+            route_type: r.route_type,
+            attrs: &r.attrs,
+            last_modified: r.last_modified,
+            selection: &mut r.selection,
+        }))
+        .chain(dest.local_network.as_mut().map(|r| Candidate {
             origin: r.origin,
             route_type: r.route_type,
             attrs: &r.attrs,
