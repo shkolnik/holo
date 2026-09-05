@@ -135,6 +135,7 @@ where
             RouteType::Internal,
             msg.tag,
             Some(msg.opaque_attrs),
+            Some(msg.metric),
             Default::default(),
         ),
         policies: apply_policy_cfg

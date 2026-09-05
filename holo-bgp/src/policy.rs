@@ -42,6 +42,8 @@ pub struct RoutePolicyInfo {
     pub route_type: RouteType,
     pub tag: Option<u32>,
     pub opaque_attrs: Option<RouteOpaqueAttrs>,
+    // Metric of the IGP route this route was redistributed from, if any.
+    pub igp_metric: Option<u32>,
     pub attrs: Attrs,
 }
 
@@ -95,6 +97,7 @@ pub(crate) fn neighbor_apply(
             rpinfo.route_type,
             rpinfo.tag,
             rpinfo.opaque_attrs,
+            rpinfo.igp_metric,
             attrs,
         );
         (PolicyResult::Accept(rpinfo), prefixes)
@@ -167,6 +170,7 @@ fn process_policies<'a>(
     match_sets: &MatchSets,
     default_policy: DefaultPolicyType,
 ) -> PolicyResult<Cow<'a, RoutePolicyInfo>> {
+    let igp_metric = rpinfo.igp_metric;
     let mut rpinfo = Cow::Borrowed(rpinfo);
 
     for stmt in policies.iter().flat_map(|policy| policy.stmts.values()) {
@@ -197,6 +201,7 @@ fn process_policies<'a>(
                 action,
                 policy_type,
                 match_sets,
+                igp_metric,
             );
         }
 
@@ -394,6 +399,7 @@ fn process_stmt_action(
     action: &PolicyAction,
     policy_type: PolicyType,
     match_sets: &MatchSets,
+    igp_metric: Option<u32>,
 ) {
     match action {
         // "set-metric"
@@ -464,10 +470,22 @@ fn process_stmt_action(
                     attrs.base.med = Some(*value);
                 }
                 BgpSetMed::Igp => {
-                    // TODO
+                    // The IGP metric is known only for routes redistributed
+                    // from an IGP; leave the MED alone for all others.
+                    if let Some(igp_metric) = igp_metric {
+                        attrs.base.med = Some(igp_metric);
+                    }
                 }
                 BgpSetMed::MedPlusIgp => {
-                    // TODO
+                    if let Some(igp_metric) = igp_metric {
+                        attrs.base.med = Some(
+                            attrs
+                                .base
+                                .med
+                                .unwrap_or(0)
+                                .saturating_add(igp_metric),
+                        );
+                    }
                 }
             },
             // "set-as-path-prepend"
@@ -557,5 +575,152 @@ fn action_set_comm<T>(
         && list.0.is_empty()
     {
         *comm_list = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use const_addrs::net;
+    use holo_utils::policy::{
+        BgpPolicyActionType, MatchSetRestrictedType, MatchSetType,
+        PolicyActionType, PolicyStmt,
+    };
+    use holo_utils::protocol::Protocol;
+
+    use super::*;
+    use crate::rib::AttrSetsCxt;
+
+    // Builds a single-statement policy that unconditionally applies the given
+    // BGP actions and accepts the route.
+    fn policy_with(
+        actions: impl IntoIterator<Item = (PolicyActionType, PolicyAction)>,
+    ) -> Vec<Arc<Policy>> {
+        let mut actions: BTreeMap<PolicyActionType, PolicyAction> =
+            actions.into_iter().collect();
+        actions.insert(PolicyActionType::Accept, PolicyAction::Accept(true));
+
+        let stmt = PolicyStmt {
+            name: "1".to_owned(),
+            prefix_set_match_type: MatchSetRestrictedType::Any,
+            tag_set_match_type: MatchSetType::Any,
+            conditions: BTreeMap::new(),
+            actions,
+        };
+        let policy = Policy {
+            name: "TEST".to_owned(),
+            stmts: [("1".to_owned(), stmt)].into(),
+        };
+        vec![Arc::new(policy)]
+    }
+
+    fn set_med(set_med: BgpSetMed) -> (PolicyActionType, PolicyAction) {
+        (
+            PolicyActionType::Bgp(BgpPolicyActionType::SetMed),
+            PolicyAction::Bgp(BgpPolicyAction::SetMed(set_med)),
+        )
+    }
+
+    // Builds the route policy info of a route redistributed from an IGP with
+    // the given metric and MED.
+    fn redistributed(
+        igp_metric: Option<u32>,
+        med: Option<u32>,
+    ) -> RoutePolicyInfo {
+        let mut attrs = Attrs::default();
+        attrs.base.med = med;
+        RoutePolicyInfo::new(
+            RouteOrigin::Protocol(Protocol::OSPFV2),
+            RouteType::Internal,
+            None,
+            None,
+            igp_metric,
+            attrs,
+        )
+    }
+
+    // Applies an import policy chain to a redistributed route and returns the
+    // resulting route policy info.
+    fn import(
+        rpinfo: &RoutePolicyInfo,
+        policies: &[Arc<Policy>],
+    ) -> RoutePolicyInfo {
+        let match_sets = MatchSets::default();
+        match process_policies(
+            PolicyType::Import,
+            AfiSafi::Ipv4Unicast,
+            net!("10.0.1.0/24").into(),
+            rpinfo,
+            policies,
+            &match_sets,
+            DefaultPolicyType::AcceptRoute,
+        ) {
+            PolicyResult::Accept(rpinfo) => rpinfo.into_owned(),
+            PolicyResult::Reject => panic!("route unexpectedly rejected"),
+        }
+    }
+
+    #[test]
+    fn set_med_igp_uses_the_igp_metric() {
+        let rpinfo = redistributed(Some(20), None);
+        let policies = policy_with([set_med(BgpSetMed::Igp)]);
+        assert_eq!(import(&rpinfo, &policies).attrs.base.med, Some(20));
+    }
+
+    #[test]
+    fn redistribution_without_the_action_leaves_the_med_unset() {
+        let rpinfo = redistributed(Some(20), None);
+        let policies = policy_with([]);
+        assert_eq!(import(&rpinfo, &policies).attrs.base.med, None);
+    }
+
+    #[test]
+    fn set_med_igp_without_a_metric_leaves_the_med_untouched() {
+        let rpinfo = redistributed(None, Some(5));
+        let policies = policy_with([set_med(BgpSetMed::Igp)]);
+        assert_eq!(import(&rpinfo, &policies).attrs.base.med, Some(5));
+    }
+
+    #[test]
+    fn med_plus_igp_adds_the_igp_metric_to_the_med() {
+        let rpinfo = redistributed(Some(20), Some(5));
+        let policies = policy_with([set_med(BgpSetMed::MedPlusIgp)]);
+        assert_eq!(import(&rpinfo, &policies).attrs.base.med, Some(25));
+    }
+
+    #[test]
+    fn med_plus_igp_treats_an_unset_med_as_zero() {
+        let rpinfo = redistributed(Some(20), None);
+        let policies = policy_with([set_med(BgpSetMed::MedPlusIgp)]);
+        assert_eq!(import(&rpinfo, &policies).attrs.base.med, Some(20));
+    }
+
+    #[test]
+    fn med_plus_igp_saturates_instead_of_overflowing() {
+        let rpinfo = redistributed(Some(20), Some(u32::MAX));
+        let policies = policy_with([set_med(BgpSetMed::MedPlusIgp)]);
+        assert_eq!(import(&rpinfo, &policies).attrs.base.med, Some(u32::MAX));
+    }
+
+    // The export stage rebuilds the route policy info from the attribute sets
+    // interned by the RIB, dropping the IGP metric. The MED set at import must
+    // survive that round trip, since that is what the export policies and the
+    // advertised UPDATE see.
+    #[test]
+    fn med_from_the_igp_metric_survives_interning() {
+        let rpinfo = redistributed(Some(20), None);
+        let policies = policy_with([set_med(BgpSetMed::Igp)]);
+        let rpinfo = import(&rpinfo, &policies);
+
+        let mut attr_sets = AttrSetsCxt::default();
+        let route_attrs = attr_sets.get_route_attr_sets(&rpinfo.attrs);
+        let exported = RoutePolicyInfo::new(
+            rpinfo.origin,
+            rpinfo.route_type,
+            None,
+            None,
+            None,
+            route_attrs.get(),
+        );
+        assert_eq!(exported.attrs.base.med, Some(20));
     }
 }

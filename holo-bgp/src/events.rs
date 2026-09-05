@@ -332,7 +332,8 @@ fn process_nbr_reach_prefixes<A>(
         .unwrap_or(&nbr.config.apply_policy);
 
     // Enqueue import policy application.
-    let rpinfo = RoutePolicyInfo::new(origin, route_type, None, None, attrs);
+    let rpinfo =
+        RoutePolicyInfo::new(origin, route_type, None, None, None, attrs);
     let msg = PolicyApplyMsg::Neighbor {
         policy_type: PolicyType::Import,
         nbr_addr: nbr.remote_addr,
@@ -927,6 +928,7 @@ pub(crate) fn advertise_routes<A>(
             let rpinfo = RoutePolicyInfo::new(
                 route.origin,
                 route.route_type,
+                None,
                 None,
                 None,
                 route_attrs.get(),
