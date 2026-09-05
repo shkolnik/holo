@@ -423,6 +423,20 @@ mod tests {
         assert_eq!(udp_socket_inode(path.to_str().unwrap(), 3784), None);
     }
 
+    // Proves the whole /proc chain against the real kernel: this process binds
+    // a port, and the scan must name this process.
+    #[test]
+    fn udp_port_holder_finds_this_process() {
+        let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let port = socket.local_addr().unwrap().port();
+        let sockaddr: SocketAddr = ([0, 0, 0, 0], port).into();
+        let holder = udp_port_holder(&sockaddr).expect("holder not found");
+        assert!(
+            holder.ends_with(&format!("pid {}", std::process::id())),
+            "unexpected holder: {holder}"
+        );
+    }
+
     #[test]
     fn rx_sockaddr_follows_the_policy() {
         let policy = BfdSocketPolicy {

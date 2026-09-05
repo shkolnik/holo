@@ -6,6 +6,7 @@
 
 use std::net::{IpAddr, SocketAddr};
 
+use holo_utils::capabilities;
 use tracing::{error, warn};
 
 use crate::network::PacketInfo;
@@ -185,7 +186,13 @@ impl std::error::Error for IoError {
 // process the kernel gave it to, since only that process can release it.
 pub(crate) fn rx_bind_fatal(sockaddr: SocketAddr, error: std::io::Error) -> ! {
     let reason = if error.kind() == std::io::ErrorKind::AddrInUse {
-        match crate::network::udp_port_holder(&sockaddr) {
+        // Reading another process's /proc/<pid>/fd is a ptrace-mode access:
+        // the kernel grants it only to a reader whose EFFECTIVE capabilities
+        // cover the holder's permitted set, and holo runs its threads with an
+        // empty effective set. Without this the scan sees only our own fds.
+        let holder =
+            capabilities::raise(|| crate::network::udp_port_holder(&sockaddr));
+        match holder {
             Some(holder) => format!("address in use (held by {holder})"),
             None => "address in use (holder unknown)".to_owned(),
         }
