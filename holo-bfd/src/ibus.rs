@@ -14,7 +14,6 @@ use holo_utils::southbound::InterfaceUpdateMsg;
 use crate::debug::Debug;
 use crate::error::Error;
 use crate::master::{Interface, Master};
-use crate::network;
 use crate::session::SessionClient;
 
 // ===== global functions =====
@@ -46,7 +45,10 @@ pub(crate) fn process_iface_update(
         .iter_by_ifname(&msg.ifname)
         .collect::<Vec<_>>()
     {
-        master.sessions.update_ifindex(sess_idx, Some(msg.ifindex));
+        let port = master.socket_policy.single_hop_port;
+        master
+            .sessions
+            .update_ifindex(sess_idx, Some(msg.ifindex), port);
     }
 }
 
@@ -71,12 +73,14 @@ pub(crate) fn process_client_peer_reg(
     match &sess.key {
         SessionKey::IpSingleHop { ifname, .. } => {
             if let Some(iface) = master.interfaces.get(ifname) {
-                master.sessions.update_ifindex(sess_idx, iface.ifindex);
+                let ifindex = iface.ifindex;
+                let port = master.socket_policy.single_hop_port;
+                master.sessions.update_ifindex(sess_idx, ifindex, port);
             }
         }
         SessionKey::IpMultihop { dst, .. } => {
             sess.state.sockaddr =
-                Some(SocketAddr::new(*dst, network::PORT_DST_MULTIHOP));
+                Some(SocketAddr::new(*dst, master.socket_policy.multihop_port));
             sess.update_tx_interval();
         }
     }

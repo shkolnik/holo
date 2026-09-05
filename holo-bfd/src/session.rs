@@ -535,6 +535,7 @@ impl Sessions {
         &mut self,
         sess_idx: SessionIndex,
         ifindex: Option<u32>,
+        port: u16,
     ) {
         let sess = &mut self.arena[sess_idx];
 
@@ -546,8 +547,7 @@ impl Sessions {
         }
         if let Some(ifindex) = ifindex {
             let (_, dst) = sess.key.as_ip_single_hop().unwrap();
-            let mut sockaddr =
-                SocketAddr::new(*dst, network::PORT_DST_SINGLE_HOP);
+            let mut sockaddr = SocketAddr::new(*dst, port);
             if let SocketAddr::V6(sockaddr) = &mut sockaddr {
                 sockaddr.set_scope_id(ifindex);
             }
@@ -640,8 +640,9 @@ impl Sessions {
     pub(crate) fn get_by_sockaddr(
         &self,
         mut sockaddr: SocketAddr,
+        port: u16,
     ) -> Option<(SessionIndex, &Session)> {
-        sockaddr.set_port(network::PORT_DST_SINGLE_HOP);
+        sockaddr.set_port(port);
         self.sockaddr_tree
             .get(&sockaddr)
             .copied()
@@ -653,8 +654,9 @@ impl Sessions {
     pub(crate) fn get_mut_by_sockaddr(
         &mut self,
         mut sockaddr: SocketAddr,
+        port: u16,
     ) -> Option<(SessionIndex, &mut Session)> {
-        sockaddr.set_port(network::PORT_DST_SINGLE_HOP);
+        sockaddr.set_port(port);
         self.sockaddr_tree
             .get(&sockaddr)
             .copied()

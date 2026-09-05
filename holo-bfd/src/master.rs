@@ -10,7 +10,7 @@ use derive_new::new;
 use holo_protocol::{
     InstanceChannelsTx, InstanceShared, MessageReceiver, ProtocolInstance,
 };
-use holo_utils::bfd::{PathType, State};
+use holo_utils::bfd::{BfdSocketPolicy, PathType, State};
 use holo_utils::ibus::IbusMsg;
 use holo_utils::ip::AddressFamily;
 use holo_utils::protocol::Protocol;
@@ -34,6 +34,8 @@ pub struct Master {
     pub sessions: Sessions,
     // System interfaces.
     pub interfaces: HashMap<String, Interface>,
+    // Rx socket policy (ports, address families).
+    pub socket_policy: BfdSocketPolicy,
     // Instance Tx channels.
     pub tx: InstanceChannelsTx<Master>,
 }
@@ -80,19 +82,26 @@ impl Master {
         let ip_mh_sessions =
             self.sessions.iter().any(|sess| sess.key.is_ip_multihop());
         let udp_packet_rxp = &self.tx.protocol_input.udp_packet_rx;
+        let policy = &self.socket_policy;
 
         // Update IP single-hop Rx tasks.
         if ip_sh_sessions && self.udp_sh_rx_tasks.is_none() {
-            self.udp_sh_rx_tasks =
-                Some(UdpRxTasks::new(PathType::IpSingleHop, udp_packet_rxp));
+            self.udp_sh_rx_tasks = Some(UdpRxTasks::new(
+                PathType::IpSingleHop,
+                udp_packet_rxp,
+                policy,
+            ));
         } else if !ip_sh_sessions && self.udp_sh_rx_tasks.is_some() {
             self.udp_sh_rx_tasks = None;
         }
 
         // Update IP multihop Rx tasks.
         if ip_mh_sessions && self.udp_mh_rx_tasks.is_none() {
-            self.udp_mh_rx_tasks =
-                Some(UdpRxTasks::new(PathType::IpMultihop, udp_packet_rxp));
+            self.udp_mh_rx_tasks = Some(UdpRxTasks::new(
+                PathType::IpMultihop,
+                udp_packet_rxp,
+                policy,
+            ));
         } else if !ip_mh_sessions && self.udp_mh_rx_tasks.is_some() {
             self.udp_mh_rx_tasks = None;
         }
@@ -129,7 +138,7 @@ impl ProtocolInstance for Master {
 
     fn new(
         _name: String,
-        _shared: InstanceShared,
+        shared: InstanceShared,
         tx: InstanceChannelsTx<Master>,
     ) -> Master {
         Master {
@@ -137,6 +146,7 @@ impl ProtocolInstance for Master {
             udp_mh_rx_tasks: None,
             sessions: Default::default(),
             interfaces: Default::default(),
+            socket_policy: shared.bfd_socket_policy,
             tx,
         }
     }
@@ -192,14 +202,21 @@ impl UdpRxTasks {
     fn new(
         path_type: PathType,
         udp_packet_rxp: &Sender<UdpRxPacketMsg>,
+        policy: &BfdSocketPolicy,
     ) -> Self {
-        let udp_rx_task = |af| match network::socket_rx(path_type, af) {
-            Ok(socket) => {
-                Some(tasks::udp_rx(socket, path_type, udp_packet_rxp))
+        // Only the address families the policy asks for are bound.
+        let udp_rx_task = |af| {
+            if !policy.binds_af(af) {
+                return None;
             }
-            Err(error) => {
-                IoError::UdpSocketError(error).log();
-                None
+            match network::socket_rx(path_type, af, policy) {
+                Ok(socket) => {
+                    Some(tasks::udp_rx(socket, path_type, udp_packet_rxp))
+                }
+                Err(error) => {
+                    IoError::UdpSocketError(error).log();
+                    None
+                }
             }
         };
         UdpRxTasks {

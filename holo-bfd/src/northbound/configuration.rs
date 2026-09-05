@@ -13,7 +13,6 @@ use holo_utils::bfd::{SessionKey, State};
 use holo_utils::socket::TTL_MAX;
 
 use crate::master::Master;
-use crate::network;
 use crate::northbound::yang_gen::bfd;
 use crate::northbound::yang_gen::config::{self, ConfigChange, IpMhSessionGroupChange, IpMhSessionGroupEntryChange, IpShSessionChange, IpShSessionEntryChange};
 use crate::packet::DiagnosticCode;
@@ -78,7 +77,9 @@ fn apply_ip_sh_session(master: &mut Master, ifname: String, dst: IpAddr, change:
             // Single-hop sessions can only be active as long as their
             // associated interface is present.
             if let Some(iface) = master.interfaces.get(&ifname) {
-                master.sessions.update_ifindex(sess_idx, iface.ifindex);
+                let ifindex = iface.ifindex;
+                let port = master.socket_policy.single_hop_port;
+                master.sessions.update_ifindex(sess_idx, ifindex, port);
             }
 
             event_queue.insert(Event::UpdateTxSocket(sess_idx));
@@ -144,13 +145,14 @@ fn apply_ip_mh_session_group(master: &mut Master, src: IpAddr, dst: IpAddr, chan
     match change {
         IpMhSessionGroupChange::Create => {
             // Get existing session or create a new one.
+            let port = master.socket_policy.multihop_port;
             let (sess_idx, sess) = master.sessions.insert(sess_key);
             sess.config.tx_ttl = Some(TTL_MAX);
             sess.config.rx_ttl = Some(TTL_MAX);
             sess.config_enabled = true;
 
             // Initialize session's socket address.
-            sess.state.sockaddr = Some(SocketAddr::new(dst, network::PORT_DST_MULTIHOP));
+            sess.state.sockaddr = Some(SocketAddr::new(dst, port));
 
             event_queue.insert(Event::UpdateRxSockets);
             event_queue.insert(Event::UpdateTxSocket(sess_idx));

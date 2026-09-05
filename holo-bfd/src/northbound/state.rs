@@ -86,7 +86,7 @@ impl<'a> YangList<'a, Master> for bfd::ip_mh::session_groups::session_group::ses
         Some(iter)
     }
 
-    fn new(_master: &'a Master, sess: &Self::ListEntry) -> Self {
+    fn new(master: &'a Master, sess: &Self::ListEntry) -> Self {
         Self {
             path_type: Some(sess.key.path_type()),
             ip_encapsulation: Some(true),
@@ -94,7 +94,8 @@ impl<'a> YangList<'a, Master> for bfd::ip_mh::session_groups::session_group::ses
             remote_discriminator: sess.state.remote.as_ref().map(|remote| remote.discr),
             remote_multiplier: sess.state.remote.as_ref().map(|remote| remote.multiplier),
             source_port: Some(*network::PORT_SRC_RANGE.start()).ignore_in_testing(),
-            dest_port: Some(network::PORT_DST_MULTIHOP).ignore_in_testing(),
+            dest_port: Some(master.socket_policy.multihop_port)
+                .ignore_in_testing(),
         }
     }
 }
@@ -159,7 +160,7 @@ impl<'a> YangList<'a, Master> for bfd::ip_sh::sessions::session::Session<'a> {
         Some(iter)
     }
 
-    fn new(_master: &'a Master, sess: &Self::ListEntry) -> Self {
+    fn new(master: &'a Master, sess: &Self::ListEntry) -> Self {
         let (ifname, dst) = sess.key.as_ip_single_hop().unwrap();
         Self {
             interface: Cow::Borrowed(ifname),
@@ -170,7 +171,8 @@ impl<'a> YangList<'a, Master> for bfd::ip_sh::sessions::session::Session<'a> {
             remote_discriminator: sess.state.remote.as_ref().map(|remote| remote.discr),
             remote_multiplier: sess.state.remote.as_ref().map(|remote| remote.multiplier),
             source_port: Some(*network::PORT_SRC_RANGE.start()).ignore_in_testing(),
-            dest_port: Some(network::PORT_DST_SINGLE_HOP).ignore_in_testing(),
+            dest_port: Some(master.socket_policy.single_hop_port)
+                .ignore_in_testing(),
         }
     }
 }

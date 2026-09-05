@@ -30,7 +30,10 @@ pub(crate) fn process_udp_packet(
             }
             match packet_info {
                 PacketInfo::IpSingleHop { src } => {
-                    master.sessions.get_mut_by_sockaddr(src)
+                    master.sessions.get_mut_by_sockaddr(
+                        src,
+                        master.socket_policy.single_hop_port,
+                    )
                 }
                 PacketInfo::IpMultihop { src, dst, ttl } => master
                     .sessions

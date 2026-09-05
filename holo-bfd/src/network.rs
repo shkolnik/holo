@@ -13,7 +13,7 @@ use std::os::fd::AsRawFd;
 use std::sync::Arc;
 use std::sync::atomic::{self, AtomicU64};
 
-use holo_utils::bfd::PathType;
+use holo_utils::bfd::{BfdSocketPolicy, PathType};
 use holo_utils::capabilities;
 use holo_utils::ip::{AddressFamily, IpAddrExt};
 use holo_utils::socket::{SocketExt, TTL_MAX, UdpSocket, UdpSocketExt};
@@ -26,9 +26,9 @@ use crate::error::{Error, IoError};
 use crate::packet::Packet;
 use crate::tasks::messages::input::UdpRxPacketMsg;
 
-pub const PORT_DST_SINGLE_HOP: u16 = 3784;
+// The single-hop (RFC 5881) and multihop (RFC 5883) destination ports live in
+// `BfdSocketPolicy`, whose default is 3784/4784.
 pub const PORT_DST_ECHO: u16 = 3785;
-pub const PORT_DST_MULTIHOP: u16 = 4784;
 pub const PORT_SRC_RANGE: std::ops::RangeInclusive<u16> = 49152..=65535;
 
 // Ancillary data about a received packet.
@@ -42,14 +42,12 @@ pub enum PacketInfo {
 pub(crate) fn socket_rx(
     path_type: PathType,
     af: AddressFamily,
+    policy: &BfdSocketPolicy,
 ) -> Result<UdpSocket, std::io::Error> {
     #[cfg(not(feature = "testing"))]
     {
         // Create socket.
-        let port = match path_type {
-            PathType::IpSingleHop => PORT_DST_SINGLE_HOP,
-            PathType::IpMultihop => PORT_DST_MULTIHOP,
-        };
+        let port = policy.port(path_type);
         let addr = IpAddr::unspecified(af);
         let sockaddr = SocketAddr::from((addr, port));
         let socket =
@@ -87,6 +85,7 @@ pub(crate) fn socket_rx(
     }
     #[cfg(feature = "testing")]
     {
+        let _ = (path_type, af, policy);
         Ok(UdpSocket {})
     }
 }
