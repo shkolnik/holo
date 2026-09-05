@@ -108,8 +108,11 @@ impl std::fmt::Display for Error {
             Error::Parse { .. } => {
                 write!(f, "failed to parse configuration change")
             }
-            Error::Prepare { .. } => {
-                write!(f, "failed to prepare configuration change")
+            Error::Prepare { path, error } => {
+                write!(
+                    f,
+                    "failed to prepare configuration change: {path}: {error}"
+                )
             }
             Error::RpcNotFound => write!(f, "RPC/Action not found"),
             Error::RpcRelay(..) => {
@@ -230,3 +233,31 @@ impl std::fmt::Display for ApplyError {
 }
 
 impl std::error::Error for ApplyError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prepare_error_display_includes_path_and_message() {
+        let error = Error::Prepare {
+            path: "/holo-bgp:bgp/neighbors/neighbor[remote-address='10.10.0.2']".to_owned(),
+            error: PrepareError {
+                message: "neighbor 10.10.0.2: passive mode requires an inbound TCP listener, which is disabled by the BGP listen policy".to_owned(),
+            },
+        };
+        let rendered = error.to_string();
+        assert!(
+            rendered.contains(
+                "/holo-bgp:bgp/neighbors/neighbor[remote-address='10.10.0.2']"
+            ),
+            "rendered error is missing the offending path: {rendered}"
+        );
+        assert!(
+            rendered.contains(
+                "neighbor 10.10.0.2: passive mode requires an inbound TCP listener, which is disabled by the BGP listen policy"
+            ),
+            "rendered error is missing the provider's message: {rendered}"
+        );
+    }
+}
