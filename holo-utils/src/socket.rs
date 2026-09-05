@@ -301,6 +301,10 @@ pub trait UdpSocketExt: SocketExt {
     // The bind is then also the availability check: the kernel lets two UDP
     // sockets share an address only when both set `SO_REUSEADDR`, so without it
     // a second binder gets EADDRINUSE instead of silently stealing the traffic.
+    //
+    // An IPv6 address is bound `IPV6_V6ONLY`: with `net.ipv6.bindv6only=0` (the
+    // default) a `[::]` bind also covers IPv4, so without it the caller's own
+    // `0.0.0.0` socket on the same port is what the second bind collides with.
     fn bind_exclusive(addr: SocketAddr) -> Result<UdpSocket>;
 
     // Sets the value of the IPV6_MULTICAST_HOPS option for this socket.
@@ -466,12 +470,16 @@ impl UdpSocketExt for UdpSocket {
     fn bind_exclusive(addr: SocketAddr) -> Result<UdpSocket> {
         use socket2::{Domain, Type};
 
-        let domain = match addr.ip().address_family() {
+        let af = addr.ip().address_family();
+        let domain = match af {
             AddressFamily::Ipv4 => Domain::IPV4,
             AddressFamily::Ipv6 => Domain::IPV6,
         };
         let socket = Socket::new(domain, Type::DGRAM, None)?;
         socket.set_nonblocking(true)?;
+        if af == AddressFamily::Ipv6 {
+            socket.set_only_v6(true)?;
+        }
         socket.bind(&addr.into())?;
         UdpSocket::from_std(socket.into())
     }

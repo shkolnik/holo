@@ -325,11 +325,12 @@ pub(crate) async fn read_loop(
 // reading /proc is racy and may be blocked by permissions or a hidepid mount,
 // in which case the caller says the holder is unknown.
 pub(crate) fn udp_port_holder(sockaddr: &SocketAddr) -> Option<String> {
-    let procfs = match sockaddr {
-        SocketAddr::V4(_) => "/proc/net/udp",
-        SocketAddr::V6(_) => "/proc/net/udp6",
-    };
-    let inode = udp_socket_inode(procfs, sockaddr.port())?;
+    // Both families, whichever the failed bind was: with bindv6only unset an
+    // IPv6 wildcard bind collides with an IPv4 socket on the same port, and
+    // that IPv4 socket appears only in /proc/net/udp.
+    let inode = ["/proc/net/udp", "/proc/net/udp6"]
+        .into_iter()
+        .find_map(|procfs| udp_socket_inode(procfs, sockaddr.port()))?;
     let (pid, comm) = pid_holding_inode(inode)?;
     Some(format!("{comm} pid {pid}"))
 }
