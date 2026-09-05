@@ -612,42 +612,46 @@ fn process_protocol_msg(
     Ok(())
 }
 
+// ===== test helpers =====
+
+#[cfg(all(test, feature = "testing"))]
+// Builds the channel set `InstanceState::new` needs. The receivers are
+// returned so the test keeps them alive for the duration of the call.
+#[allow(clippy::type_complexity)]
+pub(crate) fn test_instance_channels() -> (
+    InstanceChannelsTx<Instance>,
+    (
+        UnboundedReceiver<holo_northbound::api::provider::Notification>,
+        holo_utils::ibus::IbusChannelsRx,
+        ProtocolInputChannelsRx,
+        Receiver<ProtocolOutputMsg>,
+    ),
+) {
+    use holo_utils::ibus::ibus_channels;
+
+    let (nb_tx, nb_rx) = mpsc::unbounded_channel();
+    let (ibus_tx, ibus_rx) = ibus_channels();
+    let (protocol_input_tx, protocol_input_rx) =
+        Instance::protocol_input_channels();
+    let (protocol_output_tx, protocol_output_rx) = mpsc::channel(4);
+    let tx = InstanceChannelsTx::new(
+        nb_tx,
+        ibus_tx,
+        protocol_input_tx,
+        protocol_output_tx,
+    );
+    (tx, (nb_rx, ibus_rx, protocol_input_rx, protocol_output_rx))
+}
+
 #[cfg(all(test, feature = "testing"))]
 mod tests {
     use holo_utils::bgp::BgpListenPolicy;
-    use holo_utils::ibus::ibus_channels;
 
     use super::*;
 
-    // Builds the channel set `InstanceState::new` needs. The receivers are
-    // returned so the test keeps them alive for the duration of the call.
-    #[allow(clippy::type_complexity)]
-    fn instance_channels() -> (
-        InstanceChannelsTx<Instance>,
-        (
-            UnboundedReceiver<holo_northbound::api::provider::Notification>,
-            holo_utils::ibus::IbusChannelsRx,
-            ProtocolInputChannelsRx,
-            Receiver<ProtocolOutputMsg>,
-        ),
-    ) {
-        let (nb_tx, nb_rx) = mpsc::unbounded_channel();
-        let (ibus_tx, ibus_rx) = ibus_channels();
-        let (protocol_input_tx, protocol_input_rx) =
-            Instance::protocol_input_channels();
-        let (protocol_output_tx, protocol_output_rx) = mpsc::channel(4);
-        let tx = InstanceChannelsTx::new(
-            nb_tx,
-            ibus_tx,
-            protocol_input_tx,
-            protocol_output_tx,
-        );
-        (tx, (nb_rx, ibus_rx, protocol_input_rx, protocol_output_rx))
-    }
-
     #[tokio::test]
     async fn listen_policy_wildcard_binds_both_address_families() {
-        let (tx, _guards) = instance_channels();
+        let (tx, _guards) = test_instance_channels();
         let state = InstanceState::new(
             Ipv4Addr::new(1, 1, 1, 1),
             BgpListenPolicy::Wildcard,
@@ -665,7 +669,7 @@ mod tests {
 
     #[tokio::test]
     async fn listen_policy_no_listener_binds_nothing() {
-        let (tx, _guards) = instance_channels();
+        let (tx, _guards) = test_instance_channels();
         let state = InstanceState::new(
             Ipv4Addr::new(1, 1, 1, 1),
             BgpListenPolicy::NoListener,

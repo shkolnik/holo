@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use arc_swap::ArcSwap;
 use holo_northbound::configuration::{ConfigOp, Provider, YangConfigOps};
-use holo_northbound::error::ApplyError;
+use holo_northbound::error::{ApplyError, PrepareError};
 use holo_utils::bgp::AfiSafi;
 use holo_utils::ip::{AddressFamily, IpAddrKind};
 use holo_utils::policy::ApplyPolicyCfg;
@@ -233,6 +233,19 @@ pub struct TraceOptionPacketType {
 }
 
 // ===== helper functions =====
+
+// A passive neighbor never opens the session itself; it waits to be connected
+// to. With no listening socket that wait can't end, so the commit is refused
+// here instead of leaving a neighbor stuck in Active for good.
+fn prepare_instance(instance: &Instance, change: &ConfigChange) -> Result<(), PrepareError> {
+    if let ConfigChange::Neighbor(keys, NeighborChange::Entry(NeighborEntryChange::TransportPassiveMode(true))) = change
+        && !instance.shared.bgp_listen_policy.binds_listener()
+    {
+        return Err(PrepareError { message: format!("neighbor {}: passive mode requires an inbound TCP listener, which is disabled by the BGP listen policy", keys.remote_address) });
+    }
+
+    Ok(())
+}
 
 fn apply_instance(instance: &mut Instance, change: ConfigChange, event_queue: &mut BTreeSet<Event>) -> Result<(), ApplyError> {
     match change {
@@ -953,6 +966,10 @@ impl Provider for Instance {
 
     const YANG_OPS_CONFIG: YangConfigOps<ConfigChange> = config::YANG_OPS_CONFIG;
 
+    fn prepare(&mut self, change: &ConfigChange, _resource: &mut Option<Resource>, _event_queue: &mut BTreeSet<Event>) -> Result<(), PrepareError> {
+        prepare_instance(self, change)
+    }
+
     fn apply(&mut self, change: ConfigChange, _resource: &mut Option<Resource>, event_queue: &mut BTreeSet<Event>) -> Result<(), ApplyError> {
         apply_instance(self, change, event_queue)
     }
@@ -1179,5 +1196,49 @@ impl Default for TraceOptionPacketType {
             tx,
             rx,
         }
+    }
+}
+
+#[cfg(all(test, feature = "testing"))]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use holo_protocol::ProtocolInstance;
+    use holo_utils::bgp::BgpListenPolicy;
+
+    use super::*;
+    use crate::instance::test_instance_channels;
+
+    fn passive_mode_change(nbr_addr: IpAddr) -> ConfigChange {
+        ConfigChange::Neighbor(
+            crate::northbound::yang_gen::config::NeighborKeys { remote_address: nbr_addr },
+            NeighborChange::Entry(NeighborEntryChange::TransportPassiveMode(true)),
+        )
+    }
+
+    fn prepare_with_policy(policy: BgpListenPolicy, nbr_addr: IpAddr) -> Result<(), holo_northbound::error::PrepareError> {
+        let (tx, _guards) = test_instance_channels();
+        let shared = holo_protocol::InstanceShared {
+            bgp_listen_policy: policy,
+            ..Default::default()
+        };
+        let mut instance = Instance::new("test".to_owned(), shared, tx);
+        let mut resource = None;
+        let mut event_queue = BTreeSet::new();
+        instance.prepare(&passive_mode_change(nbr_addr), &mut resource, &mut event_queue)
+    }
+
+    #[tokio::test]
+    async fn passive_neighbor_refused_without_listener() {
+        let nbr_addr: IpAddr = "10.0.0.1".parse().unwrap();
+        let error = prepare_with_policy(BgpListenPolicy::NoListener, nbr_addr).unwrap_err();
+        assert!(error.message.contains("10.0.0.1"), "error does not name the neighbor: {}", error.message);
+        assert!(error.message.contains("listener"), "error does not mention the listener: {}", error.message);
+    }
+
+    #[tokio::test]
+    async fn passive_neighbor_accepted_with_wildcard_listener() {
+        let nbr_addr: IpAddr = "10.0.0.1".parse().unwrap();
+        assert!(prepare_with_policy(BgpListenPolicy::Wildcard, nbr_addr).is_ok());
     }
 }
