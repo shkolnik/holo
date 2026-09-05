@@ -19,7 +19,7 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{Span, debug_span};
 
-use crate::error::{Error, IoError};
+use crate::error::{self, Error};
 use crate::session::Sessions;
 use crate::tasks::messages::input::{DetectTimerMsg, UdpRxPacketMsg};
 use crate::tasks::messages::{ProtocolInputMsg, ProtocolOutputMsg};
@@ -213,10 +213,12 @@ impl UdpRxTasks {
                 Ok(socket) => {
                     Some(tasks::udp_rx(socket, path_type, udp_packet_rxp))
                 }
-                Err(error) => {
-                    IoError::UdpSocketError(error).log();
-                    None
-                }
+                // Fatal: a BFD instance with no Rx socket never detects
+                // anything, and nothing here can free the address.
+                Err(error) => error::rx_bind_fatal(
+                    network::rx_sockaddr(path_type, af, policy),
+                    error,
+                ),
             }
         };
         UdpRxTasks {

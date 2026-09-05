@@ -39,6 +39,16 @@ pub enum PacketInfo {
     IpMultihop { src: IpAddr, dst: IpAddr, ttl: u8 },
 }
 
+// The wildcard address the Rx socket for this path type and address family is
+// bound to.
+pub(crate) fn rx_sockaddr(
+    path_type: PathType,
+    af: AddressFamily,
+    policy: &BfdSocketPolicy,
+) -> SocketAddr {
+    SocketAddr::from((IpAddr::unspecified(af), policy.port(path_type)))
+}
+
 pub(crate) fn socket_rx(
     path_type: PathType,
     af: AddressFamily,
@@ -47,9 +57,7 @@ pub(crate) fn socket_rx(
     #[cfg(not(feature = "testing"))]
     {
         // Create socket.
-        let port = policy.port(path_type);
-        let addr = IpAddr::unspecified(af);
-        let sockaddr = SocketAddr::from((addr, port));
+        let sockaddr = rx_sockaddr(path_type, af, policy);
         // No SO_REUSEADDR: the Rx socket must never be shared. Another BFD
         // implementation binding the same wildcard address with SO_REUSEADDR
         // would otherwise succeed and take every packet, silently, whichever
@@ -306,5 +314,129 @@ pub(crate) async fn read_loop(
                 IoError::UdpRecvError(error).log();
             }
         }
+    }
+}
+
+// Returns a description of the process holding `sockaddr`'s UDP port, e.g.
+// "bfdd pid 1234", or None when it cannot be determined.
+//
+// Only meaningful right after an EADDRINUSE: the holder is whoever the kernel
+// just refused us in favor of. This is diagnostics, never a decision input —
+// reading /proc is racy and may be blocked by permissions or a hidepid mount,
+// in which case the caller says the holder is unknown.
+pub(crate) fn udp_port_holder(sockaddr: &SocketAddr) -> Option<String> {
+    let procfs = match sockaddr {
+        SocketAddr::V4(_) => "/proc/net/udp",
+        SocketAddr::V6(_) => "/proc/net/udp6",
+    };
+    let inode = udp_socket_inode(procfs, sockaddr.port())?;
+    let (pid, comm) = pid_holding_inode(inode)?;
+    Some(format!("{comm} pid {pid}"))
+}
+
+// Returns the inode of the first UDP socket bound to `port`, from /proc.
+fn udp_socket_inode(procfs: &str, port: u16) -> Option<u64> {
+    let contents = std::fs::read_to_string(procfs).ok()?;
+    for line in contents.lines().skip(1) {
+        let fields = line.split_whitespace().collect::<Vec<_>>();
+        // sl local_address rem_address st tx_rx tr_when retrnsmt uid timeout
+        // inode ...
+        let (Some(local), Some(inode)) = (fields.get(1), fields.get(9)) else {
+            continue;
+        };
+        let Some((_addr, local_port)) = local.rsplit_once(':') else {
+            continue;
+        };
+        if u16::from_str_radix(local_port, 16).ok() != Some(port) {
+            continue;
+        }
+        if let Ok(inode) = inode.parse::<u64>() {
+            return Some(inode);
+        }
+    }
+    None
+}
+
+// Returns the pid and command name of a process holding an open file
+// descriptor for the given socket inode.
+fn pid_holding_inode(inode: u64) -> Option<(u32, String)> {
+    let target = format!("socket:[{inode}]");
+    for entry in std::fs::read_dir("/proc").ok()?.flatten() {
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        let Ok(fds) = std::fs::read_dir(entry.path().join("fd")) else {
+            // Another user's process, or one that exited under us.
+            continue;
+        };
+        for fd in fds.flatten() {
+            if std::fs::read_link(fd.path())
+                .is_ok_and(|link| link.to_string_lossy() == target)
+            {
+                let comm = std::fs::read_to_string(entry.path().join("comm"))
+                    .map(|comm| comm.trim().to_owned())
+                    .unwrap_or_else(|_| "?".to_owned());
+                return Some((pid, comm));
+            }
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // A /proc/net/udp excerpt: FRR bfdd's wildcard 0.0.0.0:3784 (0EC8) and its
+    // Tx socket on 0.0.0.0:49152 (C000).
+    const PROC_NET_UDP: &str = concat!(
+        "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode ref pointer drops\n",
+        " 3784: 00000000:0EC8 00000000:0000 07 00000000:00000000 00:00000000 00000000     0        0 51423 2 0000000000000000 0\n",
+        "49152: 00000000:C000 00000000:0000 07 00000000:00000000 00:00000000 00000000     0        0 51424 2 0000000000000000 0\n",
+    );
+
+    fn fixture(name: &str, contents: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(name);
+        std::fs::write(&path, contents).unwrap();
+        path
+    }
+
+    #[test]
+    fn udp_socket_inode_finds_the_port() {
+        let path = fixture("holo-bfd-proc-net-udp", PROC_NET_UDP);
+        let path = path.to_str().unwrap();
+        assert_eq!(udp_socket_inode(path, 3784), Some(51423));
+        assert_eq!(udp_socket_inode(path, 49152), Some(51424));
+        assert_eq!(udp_socket_inode(path, 4784), None);
+    }
+
+    #[test]
+    fn udp_socket_inode_survives_garbage() {
+        assert_eq!(udp_socket_inode("/proc/does/not/exist", 3784), None);
+        let path =
+            fixture("holo-bfd-proc-net-udp-garbage", "header\nnonsense\n");
+        assert_eq!(udp_socket_inode(path.to_str().unwrap(), 3784), None);
+    }
+
+    #[test]
+    fn rx_sockaddr_follows_the_policy() {
+        let policy = BfdSocketPolicy {
+            single_hop_port: 3785,
+            ..Default::default()
+        };
+        assert_eq!(
+            rx_sockaddr(PathType::IpSingleHop, AddressFamily::Ipv4, &policy)
+                .to_string(),
+            "0.0.0.0:3785"
+        );
+        assert_eq!(
+            rx_sockaddr(PathType::IpMultihop, AddressFamily::Ipv6, &policy)
+                .to_string(),
+            "[::]:4784"
+        );
     }
 }
