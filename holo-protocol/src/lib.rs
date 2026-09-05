@@ -20,9 +20,10 @@ use holo_northbound::{
     NbDaemonReceiver, NbDaemonSender, NbProviderSender, process_northbound_msg,
 };
 use holo_utils::Database;
+use holo_utils::bfd::BfdSocketPolicy;
+use holo_utils::bgp::BgpListenPolicy;
 use holo_utils::bier::BierCfg;
 use holo_utils::ibus::{IbusChannelsTx, IbusMsg, IbusReceiver, IbusSender};
-use holo_utils::bfd::BfdSocketPolicy;
 use holo_utils::keychain::Keychains;
 use holo_utils::mpls::LabelManager;
 use holo_utils::policy::{MatchSets, Policies};
@@ -114,6 +115,8 @@ pub struct InstanceShared {
     pub fib_policy: Arc<FibPolicy>,
     // BFD Rx socket policy (ports, address families).
     pub bfd_socket_policy: BfdSocketPolicy,
+    // BGP TCP listen policy (wildcard listener or none).
+    pub bgp_listen_policy: BgpListenPolicy,
 }
 
 /// Instance input message.
@@ -173,6 +176,7 @@ impl std::fmt::Debug for InstanceShared {
             .field("bier_config", &self.bier_config)
             .field("fib_policy", &self.fib_policy)
             .field("bfd_socket_policy", &self.bfd_socket_policy)
+            .field("bgp_listen_policy", &self.bgp_listen_policy)
             .finish()
     }
 }

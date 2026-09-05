@@ -382,3 +382,45 @@ impl TryFromYang for LargeComm {
         Some(LargeComm(comm))
     }
 }
+
+// ===== BgpListenPolicy =====
+
+/// BGP TCP listen policy supplied by the embedder (holod leaves it default).
+///
+/// The default binds the wildcard address on port 179, which is what holod does
+/// today. An embedder whose neighbors are all active never accepts a connection,
+/// so the listener is pure collision surface: any other BGP implementation on the
+/// host that wants port 179 either loses the bind or silently shares it.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum BgpListenPolicy {
+    /// Bind `0.0.0.0:179` and `[::]:179`, accepting inbound connections.
+    #[default]
+    Wildcard,
+    /// Bind no listening socket; every session must be opened by this router.
+    NoListener,
+}
+
+impl BgpListenPolicy {
+    /// Whether a listening socket should be bound.
+    pub fn binds_listener(&self) -> bool {
+        matches!(self, BgpListenPolicy::Wildcard)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bgp_listen_policy_default_is_todays_behavior() {
+        let policy = BgpListenPolicy::default();
+        assert_eq!(policy, BgpListenPolicy::Wildcard);
+        assert!(policy.binds_listener());
+    }
+
+    #[test]
+    fn bgp_listen_policy_no_listener_binds_nothing() {
+        let policy = BgpListenPolicy::NoListener;
+        assert!(!policy.binds_listener());
+    }
+}
