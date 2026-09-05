@@ -614,9 +614,9 @@ fn process_protocol_msg(
 
 // ===== test helpers =====
 
-#[cfg(all(test, feature = "testing"))]
 // Builds the channel set `InstanceState::new` needs. The receivers are
 // returned so the test keeps them alive for the duration of the call.
+#[cfg(all(test, feature = "testing"))]
 #[allow(clippy::type_complexity)]
 pub(crate) fn test_instance_channels() -> (
     InstanceChannelsTx<Instance>,
@@ -645,8 +645,6 @@ pub(crate) fn test_instance_channels() -> (
 
 #[cfg(all(test, feature = "testing"))]
 mod tests {
-    use holo_utils::bgp::BgpListenPolicy;
-
     use super::*;
 
     #[tokio::test]

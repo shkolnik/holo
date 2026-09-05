@@ -241,7 +241,7 @@ fn prepare_instance(instance: &Instance, change: &ConfigChange) -> Result<(), Pr
     if let ConfigChange::Neighbor(keys, NeighborChange::Entry(NeighborEntryChange::TransportPassiveMode(true))) = change
         && !instance.shared.bgp_listen_policy.binds_listener()
     {
-        return Err(PrepareError { message: format!("neighbor {}: passive mode requires an inbound TCP listener, which is disabled by the BGP listen policy", keys.remote_address) });
+        return Err(PrepareError { message: format!("neighbor {}: passive mode requires an inbound TCP listener, which is disabled by the BGP listen policy; drop passive-mode from this change, or run the instance under the wildcard listen policy", keys.remote_address) });
     }
 
     Ok(())

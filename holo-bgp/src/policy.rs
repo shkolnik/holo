@@ -42,7 +42,7 @@ pub struct RoutePolicyInfo {
     pub route_type: RouteType,
     pub tag: Option<u32>,
     pub opaque_attrs: Option<RouteOpaqueAttrs>,
-    // Metric of the IGP route this route was redistributed from, if any.
+    // Metric of the route this one was redistributed from, if any.
     pub igp_metric: Option<u32>,
     pub attrs: Attrs,
 }
