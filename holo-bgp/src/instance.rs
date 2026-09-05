@@ -769,4 +769,92 @@ mod tests {
         assert_eq!(route.attrs.base.value.origin, Origin::Igp);
         assert_eq!(route.attrs.base.value.med, Some(0));
     }
+
+    // A prefix that is BOTH network-originated (MED 0) and independently
+    // redistributed from another protocol (a route at a higher MED) must keep
+    // both routes as Decision-Process candidates, and best-path must select the
+    // MED-0 local route on merit. This is impossible to satisfy while the two
+    // routes share a single RIB slot: whichever write ran second would
+    // overwrite the first, leaving a single candidate. It therefore also proves
+    // the two slots are distinct.
+    #[tokio::test]
+    async fn network_and_redistribute_coexist_local_med_zero_wins() {
+        use std::collections::HashMap;
+        use std::time::Instant;
+
+        use holo_utils::bgp::{Origin, RouteType};
+        use ipnetwork::IpNetwork;
+
+        use crate::af::Ipv4Unicast;
+        use crate::northbound::configuration::InstanceAfiSafiCfg;
+        use crate::packet::attribute::Attrs;
+        use crate::rib::{self, Redistribute, RouteOrigin};
+
+        let (tx, _guards) = test_instance_channels();
+        let shared = InstanceShared::default();
+        let mut instance = Instance::new("test".to_owned(), shared, tx);
+
+        // Configure a locally-originated /32 in IPv4 unicast (MED 0, origin
+        // IGP), then bring the instance up so it originates the network route.
+        let prefix: IpNetwork = "10.249.0.1/32".parse().unwrap();
+        let mut afi_safi_cfg = InstanceAfiSafiCfg::default();
+        afi_safi_cfg.enabled = true;
+        afi_safi_cfg.network.insert(prefix);
+        instance
+            .config
+            .afi_safi
+            .insert(AfiSafi::Ipv4Unicast, afi_safi_cfg);
+        instance.system.router_id = Some(Ipv4Addr::new(10, 249, 0, 1));
+        instance.update();
+
+        let IpNetwork::V4(prefix_v4) = prefix else {
+            unreachable!()
+        };
+
+        // Inject an independent redistributed route for the SAME prefix at a
+        // higher MED (20) into the redistribute slot.
+        let state = instance.state.as_mut().expect("instance should be up");
+        let mut redist_attrs = Attrs::default();
+        redist_attrs.base.origin = Origin::Igp;
+        redist_attrs.base.med = Some(20);
+        let redist_route_attrs =
+            state.rib.attr_sets.get_route_attr_sets(&redist_attrs);
+        let dest = state
+            .rib
+            .tables
+            .ipv4_unicast
+            .prefixes
+            .get_mut(&prefix_v4)
+            .expect("originated prefix must be present in the RIB");
+        dest.redistribute = Some(Box::new(Redistribute {
+            origin: RouteOrigin::Protocol(Protocol::OSPFV2),
+            route_type: RouteType::Internal,
+            attrs: redist_route_attrs,
+            last_modified: Instant::now(),
+            selection: Default::default(),
+        }));
+
+        // Both routes coexist as candidates: neither slot overwrote the other.
+        assert!(
+            dest.local_network.is_some(),
+            "network-originated route must survive in its own slot"
+        );
+        assert!(
+            dest.redistribute.is_some(),
+            "redistributed route must survive in its own slot"
+        );
+
+        // The Decision Process must pick the MED-0 local route on merit.
+        let nht: HashMap<_, rib::NhtEntry<Ipv4Unicast>> = HashMap::new();
+        let best = rib::best_path::<Ipv4Unicast>(
+            dest,
+            instance.config.asn,
+            &nht,
+            &instance.config.route_selection,
+        )
+        .expect("a best route must be selected");
+
+        assert_eq!(best.origin, RouteOrigin::Protocol(Protocol::BGP));
+        assert_eq!(best.attrs.base.value.med, Some(0));
+    }
 }
