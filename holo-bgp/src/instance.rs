@@ -176,9 +176,49 @@ impl Instance {
             Ok(state) => {
                 // Store instance initial state.
                 self.state = Some(state);
+
+                // Re-originate locally-configured "network" prefixes now that
+                // the RIB exists, so they reappear on every instance start and
+                // not only on a live config edit.
+                self.network_originate_all();
             }
             Err(error) => {
                 Error::InstanceStartError(Box::new(error)).log();
+            }
+        }
+    }
+
+    // Originates every locally-configured "network" prefix from all address
+    // families into the RIB. Called on instance start.
+    fn network_originate_all(&mut self) {
+        let networks = self
+            .config
+            .afi_safi
+            .iter()
+            .flat_map(|(afi_safi, cfg)| {
+                cfg.network.iter().map(move |prefix| (*afi_safi, *prefix))
+            })
+            .collect::<Vec<_>>();
+        if networks.is_empty() {
+            return;
+        }
+        let Some((mut instance, _)) = self.as_up() else {
+            return;
+        };
+        for (afi_safi, prefix) in networks {
+            match afi_safi {
+                AfiSafi::Ipv4Unicast => {
+                    events::network_originate::<Ipv4Unicast>(
+                        &mut instance,
+                        prefix,
+                    );
+                }
+                AfiSafi::Ipv6Unicast => {
+                    events::network_originate::<Ipv6Unicast>(
+                        &mut instance,
+                        prefix,
+                    );
+                }
             }
         }
     }
@@ -676,5 +716,57 @@ mod tests {
         .unwrap();
 
         assert!(state.listening_sockets.is_empty());
+    }
+
+    // A locally-configured "network" prefix must be originated into the RIB
+    // when the instance starts, carrying origin IGP and MED 0. The MED 0 is
+    // load-bearing: it lets the owner beat a transit peer advertising the same
+    // prefix with MED = IGP cost.
+    #[tokio::test]
+    async fn network_statement_originates_with_origin_igp_and_med_zero() {
+        use holo_utils::bgp::Origin;
+        use ipnetwork::IpNetwork;
+
+        use crate::northbound::configuration::InstanceAfiSafiCfg;
+        use crate::rib::RouteOrigin;
+
+        let (tx, _guards) = test_instance_channels();
+        let shared = InstanceShared::default();
+        let mut instance = Instance::new("test".to_owned(), shared, tx);
+
+        // Configure a locally-originated /32 in the IPv4 unicast AFI-SAFI.
+        let prefix: IpNetwork = "10.249.0.1/32".parse().unwrap();
+        let mut afi_safi_cfg = InstanceAfiSafiCfg::default();
+        afi_safi_cfg.enabled = true;
+        afi_safi_cfg.network.insert(prefix);
+        instance
+            .config
+            .afi_safi
+            .insert(AfiSafi::Ipv4Unicast, afi_safi_cfg);
+
+        // Bring the instance up (a present Router ID triggers start()).
+        instance.system.router_id = Some(Ipv4Addr::new(10, 249, 0, 1));
+        instance.update();
+
+        // The RIB must now hold the originated route in the redistribute slot.
+        let state = instance.state.as_ref().expect("instance should be up");
+        let IpNetwork::V4(prefix_v4) = prefix else {
+            unreachable!()
+        };
+        let dest = state
+            .rib
+            .tables
+            .ipv4_unicast
+            .prefixes
+            .get(&prefix_v4)
+            .expect("originated prefix must be present in the RIB");
+        let route = dest
+            .redistribute
+            .as_ref()
+            .expect("originated prefix must have a redistribute route");
+
+        assert_eq!(route.origin, RouteOrigin::Protocol(Protocol::BGP));
+        assert_eq!(route.attrs.base.value.origin, Origin::Igp);
+        assert_eq!(route.attrs.base.value.med, Some(0));
     }
 }

@@ -30,6 +30,8 @@ use crate::northbound::yang_gen::config::{
 use crate::packet::iana::{CeaseSubcode, ErrorCode};
 use crate::packet::message::{Message, NotificationMsg};
 use crate::rib::RouteOrigin;
+use crate::events;
+use ipnetwork::IpNetwork;
 
 #[derive(Debug)]
 pub enum Resource {}
@@ -43,6 +45,8 @@ pub enum Event {
     NeighborUpdateAuth(IpAddr),
     RedistributeIbusSub(Protocol, AddressFamily),
     RedistributeDelete(Protocol, AddressFamily, AfiSafi),
+    NetworkOriginate(IpNetwork, AddressFamily),
+    NetworkWithdraw(IpNetwork, AddressFamily),
     UpdateTraceOptions,
 }
 
@@ -84,6 +88,8 @@ pub struct InstanceAfiSafiCfg {
     pub send_default_route: bool,
     pub apply_policy: ApplyPolicyCfg,
     pub redistribution: HashMap<Protocol, RedistributionCfg>,
+    // Locally-originated prefixes (the "network" statement).
+    pub network: BTreeSet<IpNetwork>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -483,6 +489,12 @@ fn apply_afi_safi(instance: &mut Instance, afi_safi: AfiSafi, change: GlobalAfiS
                 GlobalAfiSafiEntryChange::Ipv6UnicastRedistribution(keys, change) => {
                     apply_afi_safi_ipv6_redistribution(afi_safi_cfg, keys.r#type, change, event_queue)?;
                 }
+                GlobalAfiSafiEntryChange::Ipv4UnicastNetwork(op, prefix) => {
+                    apply_afi_safi_network(afi_safi_cfg, op, prefix, AddressFamily::Ipv4, event_queue);
+                }
+                GlobalAfiSafiEntryChange::Ipv6UnicastNetwork(op, prefix) => {
+                    apply_afi_safi_network(afi_safi_cfg, op, prefix, AddressFamily::Ipv6, event_queue);
+                }
             }
         }
     }
@@ -518,6 +530,19 @@ fn apply_afi_safi_ipv6_redistribution(afi_safi_cfg: &mut InstanceAfiSafiCfg, pro
     }
 
     Ok(())
+}
+
+fn apply_afi_safi_network(afi_safi_cfg: &mut InstanceAfiSafiCfg, op: ConfigOp, prefix: IpNetwork, af: AddressFamily, event_queue: &mut BTreeSet<Event>) {
+    match op {
+        ConfigOp::Create => {
+            afi_safi_cfg.network.insert(prefix);
+            event_queue.insert(Event::NetworkOriginate(prefix, af));
+        }
+        ConfigOp::Delete => {
+            afi_safi_cfg.network.remove(&prefix);
+            event_queue.insert(Event::NetworkWithdraw(prefix, af));
+        }
+    }
 }
 
 fn apply_neighbor(instance: &mut Instance, nbr_addr: IpAddr, change: NeighborChange, event_queue: &mut BTreeSet<Event>) -> Result<(), ApplyError> {
@@ -875,6 +900,30 @@ fn process_event(instance: &mut Instance, event: Event) {
                 }
             }
         }
+        Event::NetworkOriginate(prefix, af) => {
+            if let Some((mut instance, _)) = instance.as_up() {
+                match af {
+                    AddressFamily::Ipv4 => {
+                        events::network_originate::<Ipv4Unicast>(&mut instance, prefix);
+                    }
+                    AddressFamily::Ipv6 => {
+                        events::network_originate::<Ipv6Unicast>(&mut instance, prefix);
+                    }
+                }
+            }
+        }
+        Event::NetworkWithdraw(prefix, af) => {
+            if let Some((mut instance, _)) = instance.as_up() {
+                match af {
+                    AddressFamily::Ipv4 => {
+                        events::network_withdraw::<Ipv4Unicast>(&mut instance, prefix);
+                    }
+                    AddressFamily::Ipv6 => {
+                        events::network_withdraw::<Ipv6Unicast>(&mut instance, prefix);
+                    }
+                }
+            }
+        }
         Event::UpdateTraceOptions => {
             for nbr in instance.neighbors.values_mut() {
                 let nbr_trace_opts = &nbr.config.trace_opts;
@@ -1062,6 +1111,7 @@ impl Default for InstanceAfiSafiCfg {
             send_default_route: false,
             apply_policy: Default::default(),
             redistribution: Default::default(),
+            network: Default::default(),
         }
     }
 }

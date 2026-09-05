@@ -10,8 +10,9 @@ use std::time::Instant;
 
 use chrono::Utc;
 use holo_protocol::InstanceShared;
-use holo_utils::bgp::RouteType;
+use holo_utils::bgp::{Origin, RouteType};
 use holo_utils::ibus::IbusChannelsTx;
+use holo_utils::protocol::Protocol;
 use holo_utils::ip::{IpAddrKind, IpNetworkKind};
 use holo_utils::policy::{PolicyResult, PolicyType};
 use holo_utils::socket::{TcpConnInfo, TcpStream};
@@ -682,6 +683,83 @@ where
     instance.state.schedule_decision_process(instance.tx);
 
     Ok(())
+}
+
+// ===== locally originated networks =====
+
+// Originates a locally-configured "network" prefix into BGP with origin IGP
+// and MED 0, then schedules the Decision Process.
+//
+// This mirrors the redistribution origination path (a route in the
+// `Destination::redistribute` slot participates in the Decision Process) but
+// deliberately bypasses the redistribution import policy. That import policy
+// carries `set-med igp`, which overwrites the MED with the route's IGP cost;
+// a locally-owned identity prefix must advertise MED 0 so it beats a transit
+// peer re-advertising the same prefix with MED = IGP cost. The MED is
+// therefore set here at construction and the route never touches the import
+// policy. Next-hop-self for advertisement is applied later by the neighbor
+// export policy, so no next hop is set on the local route.
+pub(crate) fn network_originate<A>(
+    instance: &mut InstanceUpView<'_>,
+    prefix: IpNetwork,
+) where
+    A: AddressFamily,
+{
+    let rib = &mut instance.state.rib;
+    let table = A::table(&mut rib.tables);
+    let prefix = A::IpNetwork::get(prefix).unwrap();
+
+    // Build the route attributes directly: origin IGP, MED 0.
+    let mut attrs = Attrs::default();
+    attrs.base.origin = Origin::Igp;
+    attrs.base.med = Some(0);
+
+    // Inject the route into the RIB's redistribute slot. `Protocol(BGP)` marks
+    // it as locally originated (not learned, not redistributed from another
+    // protocol); being "local" it also skips next-hop resolution in the
+    // Decision Process.
+    let dest = table.prefixes.entry(prefix).or_default();
+    let route_attrs = rib.attr_sets.get_route_attr_sets(&attrs);
+    dest.redistribute = Some(Box::new(Redistribute {
+        origin: RouteOrigin::Protocol(Protocol::BGP),
+        route_type: RouteType::Internal,
+        attrs: route_attrs,
+        last_modified: Instant::now(),
+        selection: SelectionState::default(),
+    }));
+
+    // Enqueue prefix and schedule the BGP Decision Process.
+    table.queued_prefixes.insert(prefix);
+    instance.state.schedule_decision_process(instance.tx);
+}
+
+// Withdraws a locally-configured "network" prefix previously originated by
+// `network_originate`, then schedules the Decision Process.
+pub(crate) fn network_withdraw<A>(
+    instance: &mut InstanceUpView<'_>,
+    prefix: IpNetwork,
+) where
+    A: AddressFamily,
+{
+    let rib = &mut instance.state.rib;
+    let table = A::table(&mut rib.tables);
+    let prefix = A::IpNetwork::get(prefix).unwrap();
+
+    if let Some(dest) = table.prefixes.get_mut(&prefix) {
+        // Only remove a route we originated (origin BGP), never a route
+        // redistributed from another protocol that shares the same slot.
+        if dest
+            .redistribute
+            .as_ref()
+            .is_some_and(|r| r.origin == RouteOrigin::Protocol(Protocol::BGP))
+        {
+            dest.redistribute = None;
+        }
+    }
+
+    // Enqueue prefix and schedule the BGP Decision Process.
+    table.queued_prefixes.insert(prefix);
+    instance.state.schedule_decision_process(instance.tx);
 }
 
 // ===== BGP decision process =====

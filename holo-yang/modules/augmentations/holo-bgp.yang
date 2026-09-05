@@ -23,6 +23,10 @@ module holo-bgp {
     prefix bgp;
   }
 
+  import ietf-inet-types {
+    prefix inet;
+  }
+
   organization
     "Holo Routing Stack";
 
@@ -200,6 +204,16 @@ module holo-bgp {
            base identity.";
       }
     }
+
+    leaf-list network {
+      type inet:ip-prefix;
+      description
+        "Locally-originated prefixes advertised into BGP with origin
+         IGP and MED 0, independent of route redistribution. The prefix
+         is injected directly into the local RIB and offered to
+         neighbors through the configured export policy; it is not
+         subject to the redistribution import policy.";
+    }
   }
 
   augment "/rt:routing/rt:control-plane-protocols/"
@@ -219,6 +233,16 @@ module holo-bgp {
            derived from the 'control-plane-protocol'
            base identity.";
       }
+    }
+
+    leaf-list network {
+      type inet:ip-prefix;
+      description
+        "Locally-originated prefixes advertised into BGP with origin
+         IGP and MED 0, independent of route redistribution. The prefix
+         is injected directly into the local RIB and offered to
+         neighbors through the configured export policy; it is not
+         subject to the redistribution import policy.";
     }
   }
 }
