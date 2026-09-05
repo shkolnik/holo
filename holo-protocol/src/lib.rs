@@ -22,6 +22,7 @@ use holo_northbound::{
 use holo_utils::Database;
 use holo_utils::bier::BierCfg;
 use holo_utils::ibus::{IbusChannelsTx, IbusMsg, IbusReceiver, IbusSender};
+use holo_utils::bfd::BfdSocketPolicy;
 use holo_utils::keychain::Keychains;
 use holo_utils::mpls::LabelManager;
 use holo_utils::policy::{MatchSets, Policies};
@@ -111,6 +112,8 @@ pub struct InstanceShared {
     pub event_recorder_config: Option<event_recorder::Config>,
     // FIB install policy (kernel route-protocol ids, preferred sources).
     pub fib_policy: Arc<FibPolicy>,
+    // BFD Rx socket policy (ports, address families).
+    pub bfd_socket_policy: BfdSocketPolicy,
 }
 
 /// Instance input message.
@@ -169,6 +172,7 @@ impl std::fmt::Debug for InstanceShared {
             .field("sr_config", &self.sr_config)
             .field("bier_config", &self.bier_config)
             .field("fib_policy", &self.fib_policy)
+            .field("bfd_socket_policy", &self.bfd_socket_policy)
             .finish()
     }
 }
