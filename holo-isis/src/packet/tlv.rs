@@ -36,12 +36,12 @@ use crate::packet::iana::{
 use crate::packet::pdu::serde_lsp_rem_lifetime_filter;
 use crate::packet::subtlvs::MsdStlv;
 use crate::packet::subtlvs::capability::{
-    FadStlv, FapmStlv, FloodingAlgoStlv, NodeAdminTagStlv, SrAlgoStlv,
+    FadStlv, FloodingAlgoStlv, NodeAdminTagStlv, SrAlgoStlv,
     SrCapabilitiesStlv, SrLocalBlockStlv,
 };
 use crate::packet::subtlvs::prefix::{
-    BierInfoStlv, Ipv4SourceRidStlv, Ipv6SourceRidStlv, PrefixAttrFlags,
-    PrefixAttrFlagsStlv, PrefixSidStlv,
+    BierInfoStlv, FapmStlv, Ipv4SourceRidStlv, Ipv6SourceRidStlv,
+    PrefixAttrFlags, PrefixAttrFlagsStlv, PrefixSidStlv,
 };
 use crate::packet::subtlvs::spb::SpbmSiStlv;
 use crate::packet::{AreaAddr, LanId, LspId, SystemId, subtlvs};

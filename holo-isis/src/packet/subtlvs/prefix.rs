@@ -74,6 +74,14 @@ pub struct PrefixSidStlv {
 #[derive(Clone, Debug, PartialEq)]
 #[derive(new)]
 #[derive(Deserialize, Serialize)]
+pub struct FapmStlv {
+    pub flex_algo: u8,
+    pub metric: u32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+#[derive(new)]
+#[derive(Deserialize, Serialize)]
 pub struct BierInfoStlv {
     pub bar: u8,
     pub ipa: u8,
@@ -256,6 +264,38 @@ impl PrefixSidStlv {
                 Sid::Index(_) => 4,
                 Sid::Label(_) => 3,
             }
+    }
+}
+
+// ===== impl FapmStlv =====
+
+impl FapmStlv {
+    const SIZE: usize = 5;
+
+    pub(crate) fn decode(
+        stlv_len: u8,
+        buf: &mut Bytes,
+    ) -> TlvDecodeResult<Self> {
+        if stlv_len as usize != Self::SIZE {
+            return Err(TlvDecodeError::InvalidLength(stlv_len));
+        }
+
+        let flex_algo = buf.try_get_u8()?;
+        let metric = buf.try_get_u32()?;
+
+        Ok(FapmStlv { flex_algo, metric })
+    }
+
+    pub(crate) fn encode(&self, buf: &mut BytesMut) {
+        let start_pos =
+            tlv_encode_start(buf, PrefixStlvType::FlexAlgoPrefixMetric);
+        buf.put_u8(self.flex_algo);
+        buf.put_u32(self.metric);
+        tlv_encode_end(buf, start_pos);
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        TLV_HDR_SIZE + Self::SIZE
     }
 }
 
