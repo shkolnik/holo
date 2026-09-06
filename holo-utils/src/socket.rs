@@ -83,6 +83,25 @@ type Result<T> = std::io::Result<T>;
 
 // Extension methods for all socket types.
 pub trait SocketExt: Sized + AsRawFd {
+    // Sets the value of the SO_PRIORITY option for this socket, which the
+    // kernel maps to the 802.1p priority of the VLAN sub-interface the packet
+    // leaves through.
+    //
+    // Must be set AFTER IP_TOS: the kernel resets sk_priority (rt_tos2priority)
+    // whenever the IP_TOS value changes. Priorities above 6 require
+    // CAP_NET_ADMIN.
+    fn set_priority(&self, priority: u32) -> Result<()> {
+        let optval = priority as c_int;
+
+        setsockopt(
+            self,
+            libc::SOL_SOCKET,
+            libc::SO_PRIORITY,
+            &optval as *const _ as *const libc::c_void,
+            std::mem::size_of::<i32>() as libc::socklen_t,
+        )
+    }
+
     // Sets the value of the IP_TOS option for this socket.
     fn set_ipv4_tos(&self, tos: u8) -> Result<()> {
         let optval = tos as c_int;
@@ -687,3 +706,4 @@ fn setsockopt<F: AsRawFd>(
 
     Ok(())
 }
+
