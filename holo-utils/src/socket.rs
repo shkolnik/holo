@@ -707,3 +707,80 @@ fn setsockopt<F: AsRawFd>(
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use std::os::unix::io::RawFd;
+
+    use super::*;
+
+    // A real kernel socket carrying the trait's default methods. Not
+    // `socket::Socket`: that name is the mock under the `testing` feature,
+    // which the whole workspace test run enables.
+    struct TestSocket(socket2::Socket);
+
+    impl AsRawFd for TestSocket {
+        fn as_raw_fd(&self) -> RawFd {
+            self.0.as_raw_fd()
+        }
+    }
+
+    impl SocketExt for TestSocket {}
+
+    impl TestSocket {
+        fn udp() -> Self {
+            TestSocket(
+                socket2::Socket::new(
+                    socket2::Domain::IPV4,
+                    socket2::Type::DGRAM,
+                    None,
+                )
+                .unwrap(),
+            )
+        }
+
+        // Reads SO_PRIORITY back from the kernel.
+        fn priority(&self) -> u32 {
+            let mut optval: c_int = 0;
+            let mut optlen = std::mem::size_of::<c_int>() as libc::socklen_t;
+            let ret = unsafe {
+                libc::getsockopt(
+                    self.as_raw_fd(),
+                    libc::SOL_SOCKET,
+                    libc::SO_PRIORITY,
+                    &mut optval as *mut _ as *mut c_void,
+                    &mut optlen,
+                )
+            };
+            assert_ne!(ret, -1, "{}", std::io::Error::last_os_error());
+            optval as u32
+        }
+    }
+
+    #[test]
+    fn set_priority_reaches_the_kernel() {
+        let socket = TestSocket::udp();
+        assert_eq!(socket.priority(), 0);
+        socket.set_priority(6).unwrap();
+        assert_eq!(socket.priority(), 6);
+    }
+
+    // The ordering the control marking rests on, asserted against the running
+    // kernel: IP_TOS resets sk_priority, so a priority set before it is lost
+    // and only "TOS then priority" survives.
+    #[test]
+    fn ip_tos_resets_priority_so_order_matters() {
+        let socket = TestSocket::udp();
+        socket
+            .set_ipv4_tos(libc::IPTOS_PREC_INTERNETCONTROL)
+            .unwrap();
+        socket.set_priority(6).unwrap();
+        assert_eq!(socket.priority(), 6, "tos then priority must keep 6");
+
+        let socket = TestSocket::udp();
+        socket.set_priority(6).unwrap();
+        socket
+            .set_ipv4_tos(libc::IPTOS_PREC_INTERNETCONTROL)
+            .unwrap();
+        assert_eq!(socket.priority(), 0, "priority then tos must lose it");
+    }
+}
