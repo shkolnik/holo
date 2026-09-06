@@ -307,6 +307,12 @@ pub enum FloodingAlgo {
     ModifiedManet = 2,
 }
 
+// ===== impl MtId =====
+
+impl MtId {
+    pub const ALL: [MtId; 2] = [MtId::Standard, MtId::Ipv6Unicast];
+}
+
 // ===== conversion functions =====
 
 impl From<MtId> for u16 {
