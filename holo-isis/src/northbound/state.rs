@@ -18,7 +18,7 @@ use holo_utils::crypto::CryptoAlgo;
 use holo_utils::mac_addr::MacAddr;
 use holo_utils::option::OptionExt;
 use holo_utils::protocol::Protocol;
-use holo_utils::sr::IgpAlgo;
+use holo_utils::sr::{IgpAlgo, PrefixSidAlgo};
 use holo_yang::types::{HexStr, HexString, TimerValueMillis, TimerValueSecs16, Timeticks};
 use holo_yang::{ToYang, ToYangFlags};
 use ipnetwork::IpNetwork;
@@ -411,9 +411,11 @@ impl<'a> YangContainer<'a, Instance> for isis::database::levels::lsp::router_cap
 
     fn new(_instance: &'a Instance, router_cap: &Self::ParentListEntry) -> Option<Self> {
         let sr_algo = &router_cap.sub_tlvs.sr_algo.as_ref()?;
-        let iter = sr_algo.get().iter().copied();
+        let iter = sr_algo.get().iter().filter_map(|algo| PrefixSidAlgo::from_u8(*algo));
+        let iter_number = sr_algo.get().iter().copied();
         Some(Self {
             sr_algorithm: Some(Box::new(iter)),
+            sr_algorithm_number: Some(Box::new(iter_number)),
         })
     }
 }
@@ -1253,7 +1255,8 @@ impl<'a> YangList<'a, Instance> for isis::database::levels::lsp::extended_ipv4_r
 
     fn new(_instance: &'a Instance, stlv: &Self::ListEntry) -> Self {
         Self {
-            algorithm: Some(stlv.algo),
+            algorithm: PrefixSidAlgo::from_u8(stlv.algo),
+            algorithm_number: Some(stlv.algo),
             label_value: stlv.sid.as_label().map(|label| label.get()),
             index_value: stlv.sid.as_index().copied(),
         }
@@ -1785,7 +1788,8 @@ impl<'a> YangList<'a, Instance> for isis::database::levels::lsp::mt_extended_ipv
 
     fn new(_instance: &'a Instance, stlv: &Self::ListEntry) -> Self {
         Self {
-            algorithm: Some(stlv.algo),
+            algorithm: PrefixSidAlgo::from_u8(stlv.algo),
+            algorithm_number: Some(stlv.algo),
             label_value: stlv.sid.as_label().map(|label| label.get()),
             index_value: stlv.sid.as_index().copied(),
         }
@@ -1874,7 +1878,8 @@ impl<'a> YangList<'a, Instance> for isis::database::levels::lsp::mt_ipv6_reachab
 
     fn new(_instance: &'a Instance, stlv: &Self::ListEntry) -> Self {
         Self {
-            algorithm: Some(stlv.algo),
+            algorithm: PrefixSidAlgo::from_u8(stlv.algo),
+            algorithm_number: Some(stlv.algo),
             label_value: stlv.sid.as_label().map(|label| label.get()),
             index_value: stlv.sid.as_index().copied(),
         }
@@ -1962,7 +1967,8 @@ impl<'a> YangList<'a, Instance> for isis::database::levels::lsp::ipv6_reachabili
 
     fn new(_instance: &'a Instance, stlv: &Self::ListEntry) -> Self {
         Self {
-            algorithm: Some(stlv.algo),
+            algorithm: PrefixSidAlgo::from_u8(stlv.algo),
+            algorithm_number: Some(stlv.algo),
             label_value: stlv.sid.as_label().map(|label| label.get()),
             index_value: stlv.sid.as_index().copied(),
         }

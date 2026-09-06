@@ -55,7 +55,7 @@ pub(crate) fn prefix_sid_update(
         .filter(|lsp| lsp.rem_lifetime != 0)
         .filter(|lsp| lsp.seqno != 0)
         .filter_map(|lsp| lsp.tlvs.sr_algos())
-        .any(|sr_algos| sr_algos.get().contains(&PrefixSidAlgo::Spf))
+        .any(|sr_algos| sr_algos.get().contains(&(PrefixSidAlgo::Spf as u8)))
     {
         return;
     }

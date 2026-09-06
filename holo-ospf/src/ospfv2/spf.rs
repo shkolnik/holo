@@ -697,7 +697,7 @@ fn route_prefix_sids(
     adv_rtr: Ipv4Addr,
     prefix: &Ipv4Network,
     route_type: ExtPrefixRouteType,
-) -> BTreeMap<PrefixSidAlgo, PrefixSid> {
+) -> BTreeMap<u8, PrefixSid> {
     let mut prefix_sids = BTreeMap::new();
 
     if let Some(prefix_sid) = area
@@ -709,9 +709,9 @@ fn route_prefix_sids(
             route_type == tlv.route_type
                 || route_type == ExtPrefixRouteType::Unspecified
         })
-        .and_then(|tlv| tlv.prefix_sids.get(&PrefixSidAlgo::Spf))
+        .and_then(|tlv| tlv.prefix_sids.get(&(PrefixSidAlgo::Spf as u8)))
     {
-        prefix_sids.insert(PrefixSidAlgo::Spf, *prefix_sid);
+        prefix_sids.insert(PrefixSidAlgo::Spf as u8, *prefix_sid);
     }
 
     prefix_sids

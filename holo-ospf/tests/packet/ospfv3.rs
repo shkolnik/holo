@@ -983,7 +983,9 @@ static LSA3: Lazy<(Vec<u8>, Lsa<Ospfv3>)> = Lazy::new(|| {
                         .into(),
                 ),
                 func_caps: None,
-                sr_algo: Some(SrAlgoTlv::new(btreeset!(PrefixSidAlgo::Spf))),
+                sr_algo: Some(SrAlgoTlv::new(btreeset!(
+                    PrefixSidAlgo::Spf as u8
+                ))),
                 srgb: vec![SidLabelRangeTlv::new(
                     Sid::Label(Label::new(16000)),
                     8000,
@@ -1223,10 +1225,10 @@ static EXT_INTRA_AREA_PREFIX_LSA1: Lazy<(Vec<u8>, Lsa<Ospfv3>)> =
                         value: net!("2.2.2.2/32"),
                         metric: 0,
                         prefix_sids: btreemap! {
-                            PrefixSidAlgo::Spf => {
+                            PrefixSidAlgo::Spf as u8 => {
                                 PrefixSid {
                                     flags: PrefixSidFlags::empty(),
-                                    algo: PrefixSidAlgo::Spf,
+                                    algo: PrefixSidAlgo::Spf as u8,
                                     sid: Sid::Index(20),
                                 }
                             }

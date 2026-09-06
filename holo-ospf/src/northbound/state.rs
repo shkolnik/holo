@@ -56,7 +56,7 @@ pub enum Ospfv3RouterLinkSubTlv<'a> {
 // ListEntry for OSPFv3 extended prefix sub-TLV lists.
 #[derive(Debug)]
 pub enum Ospfv3PrefixSubTlv<'a> {
-    PrefixSids(&'a BTreeMap<PrefixSidAlgo, ospfv3::packet::lsa::PrefixSid>),
+    PrefixSids(&'a BTreeMap<u8, ospfv3::packet::lsa::PrefixSid>),
     Biers(&'a Vec<BierStlv>),
     Unknown(&'a UnknownTlv),
 }
@@ -388,9 +388,11 @@ impl<'a> YangContainer<'a, Instance<Ospfv2>> for ospf::database::as_scope_lsa_ty
     fn new(_instance: &'a Instance<Ospfv2>, lse: &Self::ParentListEntry) -> Option<Self> {
         let lsa = &lse.data;
         let lsa_body = lsa.body.as_opaque_link()?.as_router_info()?;
-        let iter = lsa_body.sr_algo.iter().flat_map(|tlv| tlv.get().iter()).copied();
+        let iter = lsa_body.sr_algo.iter().flat_map(|tlv| tlv.get().iter()).filter_map(|algo| PrefixSidAlgo::from_u8(*algo));
+        let iter_number = lsa_body.sr_algo.iter().flat_map(|tlv| tlv.get().iter()).copied();
         Some(Self {
             sr_algorithm: Some(Box::new(iter)),
+            sr_algorithm_number: Some(Box::new(iter_number)),
         })
     }
 }
@@ -506,7 +508,8 @@ impl<'a> YangList<'a, Instance<Ospfv2>> for ospf::database::as_scope_lsa_type::a
     fn new(_instance: &'a Instance<Ospfv2>, stlv: &Self::ListEntry) -> Self {
         Self {
             mt_id: Some(0),
-            algorithm: Some(stlv.algo),
+            algorithm: PrefixSidAlgo::from_u8(stlv.algo),
+            algorithm_number: Some(stlv.algo),
             label_value: stlv.sid.as_label().map(|label| label.get()),
             index_value: stlv.sid.as_index().copied(),
         }
@@ -647,9 +650,11 @@ impl<'a> YangContainer<'a, Instance<Ospfv3>> for ospf::database::as_scope_lsa_ty
     fn new(_instance: &'a Instance<Ospfv3>, lse: &Self::ParentListEntry) -> Option<Self> {
         let lsa = &lse.data;
         let lsa_body = lsa.body.as_router_info()?;
-        let iter = lsa_body.sr_algo.iter().flat_map(|tlv| tlv.get().iter()).copied();
+        let iter = lsa_body.sr_algo.iter().flat_map(|tlv| tlv.get().iter()).filter_map(|algo| PrefixSidAlgo::from_u8(*algo));
+        let iter_number = lsa_body.sr_algo.iter().flat_map(|tlv| tlv.get().iter()).copied();
         Some(Self {
             sr_algorithm: Some(Box::new(iter)),
+            sr_algorithm_number: Some(Box::new(iter_number)),
         })
     }
 }
@@ -842,7 +847,8 @@ impl<'a> YangList<'a, Instance<Ospfv3>>
 
     fn new(_instance: &'a Instance<Ospfv3>, stlv: &Self::ListEntry) -> Self {
         Self {
-            algorithm: Some(stlv.algo),
+            algorithm: PrefixSidAlgo::from_u8(stlv.algo),
+            algorithm_number: Some(stlv.algo),
             label_value: stlv.sid.as_label().map(|label| label.get()),
             index_value: stlv.sid.as_index().copied(),
         }
@@ -1314,9 +1320,11 @@ impl<'a> YangContainer<'a, Instance<Ospfv2>> for ospf::areas::area::database::ar
     fn new(_instance: &'a Instance<Ospfv2>, lse: &Self::ParentListEntry) -> Option<Self> {
         let lsa = &lse.data;
         let lsa_body = lsa.body.as_opaque_area()?.as_router_info()?;
-        let iter = lsa_body.sr_algo.iter().flat_map(|tlv| tlv.get().iter()).copied();
+        let iter = lsa_body.sr_algo.iter().flat_map(|tlv| tlv.get().iter()).filter_map(|algo| PrefixSidAlgo::from_u8(*algo));
+        let iter_number = lsa_body.sr_algo.iter().flat_map(|tlv| tlv.get().iter()).copied();
         Some(Self {
             sr_algorithm: Some(Box::new(iter)),
+            sr_algorithm_number: Some(Box::new(iter_number)),
         })
     }
 }
@@ -1434,7 +1442,8 @@ impl<'a> YangList<'a, Instance<Ospfv2>>
     fn new(_instance: &'a Instance<Ospfv2>, stlv: &Self::ListEntry) -> Self {
         Self {
             mt_id: Some(0),
-            algorithm: Some(stlv.algo),
+            algorithm: PrefixSidAlgo::from_u8(stlv.algo),
+            algorithm_number: Some(stlv.algo),
             label_value: stlv.sid.as_label().map(|label| label.get()),
             index_value: stlv.sid.as_index().copied(),
         }
@@ -1863,9 +1872,11 @@ impl<'a> YangContainer<'a, Instance<Ospfv3>> for ospf::areas::area::database::ar
     fn new(_instance: &'a Instance<Ospfv3>, lse: &Self::ParentListEntry) -> Option<Self> {
         let lsa = &lse.data;
         let lsa_body = lsa.body.as_router_info()?;
-        let iter = lsa_body.sr_algo.iter().flat_map(|tlv| tlv.get().iter()).copied();
+        let iter = lsa_body.sr_algo.iter().flat_map(|tlv| tlv.get().iter()).filter_map(|algo| PrefixSidAlgo::from_u8(*algo));
+        let iter_number = lsa_body.sr_algo.iter().flat_map(|tlv| tlv.get().iter()).copied();
         Some(Self {
             sr_algorithm: Some(Box::new(iter)),
+            sr_algorithm_number: Some(Box::new(iter_number)),
         })
     }
 }
@@ -2232,7 +2243,8 @@ impl<'a> YangList<'a, Instance<Ospfv3>>
 
     fn new(_instance: &'a Instance<Ospfv3>, stlv: &Self::ListEntry) -> Self {
         Self {
-            algorithm: Some(stlv.algo),
+            algorithm: PrefixSidAlgo::from_u8(stlv.algo),
+            algorithm_number: Some(stlv.algo),
             label_value: stlv.sid.as_label().map(|label| label.get()),
             index_value: stlv.sid.as_index().copied(),
         }
@@ -2526,7 +2538,8 @@ impl<'a> YangList<'a, Instance<Ospfv3>>
 
     fn new(_instance: &'a Instance<Ospfv3>, stlv: &Self::ListEntry) -> Self {
         Self {
-            algorithm: Some(stlv.algo),
+            algorithm: PrefixSidAlgo::from_u8(stlv.algo),
+            algorithm_number: Some(stlv.algo),
             label_value: stlv.sid.as_label().map(|label| label.get()),
             index_value: stlv.sid.as_index().copied(),
         }
@@ -3480,7 +3493,8 @@ impl<'a> YangList<'a, Instance<Ospfv3>>
 
     fn new(_instance: &'a Instance<Ospfv3>, stlv: &Self::ListEntry) -> Self {
         Self {
-            algorithm: Some(stlv.algo),
+            algorithm: PrefixSidAlgo::from_u8(stlv.algo),
+            algorithm_number: Some(stlv.algo),
             label_value: stlv.sid.as_label().map(|label| label.get()),
             index_value: stlv.sid.as_index().copied(),
         }

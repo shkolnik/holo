@@ -13,7 +13,7 @@ use bitflags::bitflags;
 use derive_new::new;
 use holo_utils::bytes::{Bytes, BytesMut};
 use holo_utils::mpls::Label;
-use holo_utils::sr::{PrefixSidAlgo, Sid};
+use holo_utils::sr::Sid;
 use num_traits::FromPrimitive;
 use serde::{Deserialize, Serialize};
 use tracing::debug_span;
@@ -48,7 +48,7 @@ bitflags! {
 #[derive(Clone, Debug, PartialEq)]
 #[derive(new)]
 #[derive(Deserialize, Serialize)]
-pub struct SrAlgoStlv(BTreeSet<PrefixSidAlgo>);
+pub struct SrAlgoStlv(BTreeSet<u8>);
 
 #[derive(Clone, Debug, PartialEq)]
 #[derive(new)]
@@ -170,10 +170,6 @@ impl SrAlgoStlv {
         let mut list = BTreeSet::new();
         for _ in 0..stlv_len {
             let algo = buf.try_get_u8()?;
-            let Some(algo) = PrefixSidAlgo::from_u8(algo) else {
-                // Unsupported algorithm - ignore.
-                continue;
-            };
             list.insert(algo);
         }
 
@@ -185,7 +181,7 @@ impl SrAlgoStlv {
     pub(crate) fn encode(&self, buf: &mut BytesMut) {
         let start_pos = tlv_encode_start(buf, RouterCapStlvType::SrAlgorithm);
         for algo in &self.0 {
-            buf.put_u8(*algo as u8);
+            buf.put_u8(*algo);
         }
         tlv_encode_end(buf, start_pos);
     }
@@ -194,7 +190,7 @@ impl SrAlgoStlv {
         TLV_HDR_SIZE + self.0.len()
     }
 
-    pub(crate) fn get(&self) -> &BTreeSet<PrefixSidAlgo> {
+    pub(crate) fn get(&self) -> &BTreeSet<u8> {
         &self.0
     }
 }

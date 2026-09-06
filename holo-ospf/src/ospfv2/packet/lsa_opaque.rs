@@ -11,7 +11,7 @@ use derive_new::new;
 use enum_as_inner::EnumAsInner;
 use holo_utils::bytes::{Bytes, BytesMut};
 use holo_utils::mpls::Label;
-use holo_utils::sr::{PrefixSidAlgo, Sid};
+use holo_utils::sr::Sid;
 use ipnetwork::Ipv4Network;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -169,7 +169,7 @@ pub struct ExtPrefixTlv {
     pub flags: LsaExtPrefixFlags,
     pub prefix: Ipv4Network,
     #[new(default)]
-    pub prefix_sids: BTreeMap<PrefixSidAlgo, PrefixSid>,
+    pub prefix_sids: BTreeMap<u8, PrefixSid>,
     #[new(default)]
     pub unknown_tlvs: Vec<UnknownTlv>,
 }
@@ -207,7 +207,7 @@ pub enum ExtPrefixRouteType {
 #[derive(Deserialize, Serialize)]
 pub struct PrefixSid {
     pub flags: PrefixSidFlags,
-    pub algo: PrefixSidAlgo,
+    pub algo: u8,
     pub sid: Sid,
 }
 
@@ -685,10 +685,6 @@ impl ExtPrefixTlv {
                         continue;
                     }
                     let algo = buf_stlv.try_get_u8()?;
-                    let Some(algo) = PrefixSidAlgo::from_u8(algo) else {
-                        // Unsupported algorithm - ignore.
-                        continue;
-                    };
 
                     // Parse SID (variable length).
                     let sid = if !flags
@@ -734,7 +730,7 @@ impl ExtPrefixTlv {
             buf.put_u8(prefix_sid.flags.bits());
             buf.put_u8(0);
             buf.put_u8(0);
-            buf.put_u8(*algo as u8);
+            buf.put_u8(*algo);
             match prefix_sid.sid {
                 Sid::Index(index) => buf.put_u32(index),
                 Sid::Label(label) => buf.put_u24(label.get()),

@@ -654,7 +654,7 @@ fn lsa_orig_router_info(
     let mut srlb = vec![];
     if instance.config.sr_enabled {
         // Fill in supported SR algorithms.
-        sr_algo = Some(SrAlgoTlv::new([PrefixSidAlgo::Spf].into()));
+        sr_algo = Some(SrAlgoTlv::new([PrefixSidAlgo::Spf as u8].into()));
 
         // Fill in local SRGB.
         for range in &sr_config.srgb {
@@ -738,8 +738,8 @@ fn lsa_orig_ext_prefix(
                     SidLastHopBehavior::Php => (),
                 }
                 let sid = Sid::Index(prefix_sid.index);
-                prefix_sids
-                    .insert(*algo, PrefixSid::new(psid_flags, *algo, sid));
+                let algo = *algo as u8;
+                prefix_sids.insert(algo, PrefixSid::new(psid_flags, algo, sid));
 
                 prefixes.insert(
                     *prefix,

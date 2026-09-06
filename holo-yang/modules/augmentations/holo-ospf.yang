@@ -22,6 +22,10 @@ module holo-ospf {
     prefix ospf;
   }
 
+  import ietf-ospf-sr-mpls {
+    prefix ospf-sr-mpls;
+  }
+
   import ietf-ospfv3-extended-lsa {
     prefix ospfv3-e-lsa;
     reference
@@ -472,5 +476,234 @@ module holo-ospf {
     description
       "This notification is sent when an invalid LSA is received on an
        OSPF interface.";
+  }
+
+  augment "/rt:routing/rt:control-plane-protocols/"
+        + "rt:control-plane-protocol/ospf:ospf/ospf:areas/ospf:area/"
+        + "ospf:database/ospf:area-scope-lsa-type/"
+        + "ospf:area-scope-lsas/ospf:area-scope-lsa/ospf:version/"
+        + "ospf:ospfv2/ospf:ospfv2/ospf:body/ospf:opaque/"
+        + "ospf:extended-prefix-opaque/ospf:extended-prefix-tlv/"
+        + "ospf-sr-mpls:prefix-sid-sub-tlvs/"
+        + "ospf-sr-mpls:prefix-sid-sub-tlv" {
+    description
+      "Augments the Prefix-SID Sub-TLV with the numeric value of the
+       advertised algorithm.";
+    leaf algorithm-number {
+      type uint8;
+      description
+        "Algorithm associated with the Prefix-SID, given by its numeric
+         value. Unlike the algorithm leaf, this is also present for
+         algorithms that have no corresponding YANG identity, such as
+         Flexible Algorithms.";
+    }
+  }
+
+  augment "/rt:routing/rt:control-plane-protocols/"
+        + "rt:control-plane-protocol/ospf:ospf/ospf:areas/ospf:area/"
+        + "ospf:database/ospf:area-scope-lsa-type/"
+        + "ospf:area-scope-lsas/ospf:area-scope-lsa/ospf:version/"
+        + "ospf:ospfv2/ospf:ospfv2/ospf:body/ospf:opaque/"
+        + "ospf:ri-opaque/ospf-sr-mpls:sr-algorithm-tlv" {
+    description
+      "Augments the SR-Algorithm TLV with the numeric value of the
+       advertised algorithms.";
+    leaf-list sr-algorithm-number {
+      type uint8;
+      description
+        "The SR algorithms that the router is currently using, given by
+         their numeric value. Unlike the sr-algorithm leaf-list, this also
+         covers algorithms that have no corresponding YANG identity, such
+         as Flexible Algorithms.";
+    }
+  }
+
+  augment "/rt:routing/rt:control-plane-protocols/"
+        + "rt:control-plane-protocol/ospf:ospf/ospf:areas/ospf:area/"
+        + "ospf:database/ospf:area-scope-lsa-type/"
+        + "ospf:area-scope-lsas/ospf:area-scope-lsa/ospf:version/"
+        + "ospf:ospfv3/ospf:ospfv3/ospf:body/ospf:router-information/"
+        + "ospf-sr-mpls:sr-algorithm-tlv" {
+    description
+      "Augments the SR-Algorithm TLV with the numeric value of the
+       advertised algorithms.";
+    leaf-list sr-algorithm-number {
+      type uint8;
+      description
+        "The SR algorithms that the router is currently using, given by
+         their numeric value. Unlike the sr-algorithm leaf-list, this also
+         covers algorithms that have no corresponding YANG identity, such
+         as Flexible Algorithms.";
+    }
+  }
+
+  augment "/rt:routing/rt:control-plane-protocols/"
+        + "rt:control-plane-protocol/ospf:ospf/ospf:areas/ospf:area/"
+        + "ospf:database/ospf:area-scope-lsa-type/"
+        + "ospf:area-scope-lsas/ospf:area-scope-lsa/ospf:version/"
+        + "ospf:ospfv3/ospf:ospfv3/ospf:body/"
+        + "ospfv3-e-lsa:e-inter-area-prefix/"
+        + "ospfv3-e-lsa:e-inter-prefix-tlvs/"
+        + "ospfv3-e-lsa:inter-prefix-tlv/ospfv3-e-lsa:sub-tlvs/"
+        + "ospf-sr-mpls:prefix-sid-sub-tlvs/"
+        + "ospf-sr-mpls:prefix-sid-sub-tlv" {
+    description
+      "Augments the Prefix-SID Sub-TLV with the numeric value of the
+       advertised algorithm.";
+    leaf algorithm-number {
+      type uint8;
+      description
+        "Algorithm associated with the Prefix-SID, given by its numeric
+         value. Unlike the algorithm leaf, this is also present for
+         algorithms that have no corresponding YANG identity, such as
+         Flexible Algorithms.";
+    }
+  }
+
+  augment "/rt:routing/rt:control-plane-protocols/"
+        + "rt:control-plane-protocol/ospf:ospf/ospf:areas/ospf:area/"
+        + "ospf:database/ospf:area-scope-lsa-type/"
+        + "ospf:area-scope-lsas/ospf:area-scope-lsa/ospf:version/"
+        + "ospf:ospfv3/ospf:ospfv3/ospf:body/"
+        + "ospfv3-e-lsa:e-intra-area-prefix/"
+        + "ospfv3-e-lsa:e-intra-prefix-tlvs/"
+        + "ospfv3-e-lsa:intra-prefix-tlv/ospfv3-e-lsa:sub-tlvs/"
+        + "ospf-sr-mpls:prefix-sid-sub-tlvs/"
+        + "ospf-sr-mpls:prefix-sid-sub-tlv" {
+    description
+      "Augments the Prefix-SID Sub-TLV with the numeric value of the
+       advertised algorithm.";
+    leaf algorithm-number {
+      type uint8;
+      description
+        "Algorithm associated with the Prefix-SID, given by its numeric
+         value. Unlike the algorithm leaf, this is also present for
+         algorithms that have no corresponding YANG identity, such as
+         Flexible Algorithms.";
+    }
+  }
+
+  augment "/rt:routing/rt:control-plane-protocols/"
+        + "rt:control-plane-protocol/ospf:ospf/ospf:areas/ospf:area/"
+        + "ospf:database/ospf:area-scope-lsa-type/"
+        + "ospf:area-scope-lsas/ospf:area-scope-lsa/ospf:version/"
+        + "ospf:ospfv3/ospf:ospfv3/ospf:body/ospfv3-e-lsa:e-nssa/"
+        + "ospfv3-e-lsa:e-external-tlvs/"
+        + "ospfv3-e-lsa:external-prefix-tlv/ospfv3-e-lsa:sub-tlvs/"
+        + "ospf-sr-mpls:prefix-sid-sub-tlvs/"
+        + "ospf-sr-mpls:prefix-sid-sub-tlv" {
+    description
+      "Augments the Prefix-SID Sub-TLV with the numeric value of the
+       advertised algorithm.";
+    leaf algorithm-number {
+      type uint8;
+      description
+        "Algorithm associated with the Prefix-SID, given by its numeric
+         value. Unlike the algorithm leaf, this is also present for
+         algorithms that have no corresponding YANG identity, such as
+         Flexible Algorithms.";
+    }
+  }
+
+  augment "/rt:routing/rt:control-plane-protocols/"
+        + "rt:control-plane-protocol/ospf:ospf/ospf:areas/ospf:area/"
+        + "ospf:interfaces/ospf:interface/ospf:database/"
+        + "ospf:link-scope-lsa-type/ospf:link-scope-lsas/"
+        + "ospf:link-scope-lsa/ospf:version/ospf:ospfv3/ospf:ospfv3/"
+        + "ospf:body/ospfv3-e-lsa:e-link/ospfv3-e-lsa:e-link-tlvs/"
+        + "ospfv3-e-lsa:intra-prefix-tlv/ospfv3-e-lsa:sub-tlvs/"
+        + "ospf-sr-mpls:prefix-sid-sub-tlvs/"
+        + "ospf-sr-mpls:prefix-sid-sub-tlv" {
+    description
+      "Augments the Prefix-SID Sub-TLV with the numeric value of the
+       advertised algorithm.";
+    leaf algorithm-number {
+      type uint8;
+      description
+        "Algorithm associated with the Prefix-SID, given by its numeric
+         value. Unlike the algorithm leaf, this is also present for
+         algorithms that have no corresponding YANG identity, such as
+         Flexible Algorithms.";
+    }
+  }
+
+  augment "/rt:routing/rt:control-plane-protocols/"
+        + "rt:control-plane-protocol/ospf:ospf/ospf:database/"
+        + "ospf:as-scope-lsa-type/ospf:as-scope-lsas/"
+        + "ospf:as-scope-lsa/ospf:version/ospf:ospfv2/ospf:ospfv2/"
+        + "ospf:body/ospf:opaque/ospf:extended-prefix-opaque/"
+        + "ospf:extended-prefix-tlv/ospf-sr-mpls:prefix-sid-sub-tlvs/"
+        + "ospf-sr-mpls:prefix-sid-sub-tlv" {
+    description
+      "Augments the Prefix-SID Sub-TLV with the numeric value of the
+       advertised algorithm.";
+    leaf algorithm-number {
+      type uint8;
+      description
+        "Algorithm associated with the Prefix-SID, given by its numeric
+         value. Unlike the algorithm leaf, this is also present for
+         algorithms that have no corresponding YANG identity, such as
+         Flexible Algorithms.";
+    }
+  }
+
+  augment "/rt:routing/rt:control-plane-protocols/"
+        + "rt:control-plane-protocol/ospf:ospf/ospf:database/"
+        + "ospf:as-scope-lsa-type/ospf:as-scope-lsas/"
+        + "ospf:as-scope-lsa/ospf:version/ospf:ospfv2/ospf:ospfv2/"
+        + "ospf:body/ospf:opaque/ospf:ri-opaque/"
+        + "ospf-sr-mpls:sr-algorithm-tlv" {
+    description
+      "Augments the SR-Algorithm TLV with the numeric value of the
+       advertised algorithms.";
+    leaf-list sr-algorithm-number {
+      type uint8;
+      description
+        "The SR algorithms that the router is currently using, given by
+         their numeric value. Unlike the sr-algorithm leaf-list, this also
+         covers algorithms that have no corresponding YANG identity, such
+         as Flexible Algorithms.";
+    }
+  }
+
+  augment "/rt:routing/rt:control-plane-protocols/"
+        + "rt:control-plane-protocol/ospf:ospf/ospf:database/"
+        + "ospf:as-scope-lsa-type/ospf:as-scope-lsas/"
+        + "ospf:as-scope-lsa/ospf:version/ospf:ospfv3/ospf:ospfv3/"
+        + "ospf:body/ospf:router-information/"
+        + "ospf-sr-mpls:sr-algorithm-tlv" {
+    description
+      "Augments the SR-Algorithm TLV with the numeric value of the
+       advertised algorithms.";
+    leaf-list sr-algorithm-number {
+      type uint8;
+      description
+        "The SR algorithms that the router is currently using, given by
+         their numeric value. Unlike the sr-algorithm leaf-list, this also
+         covers algorithms that have no corresponding YANG identity, such
+         as Flexible Algorithms.";
+    }
+  }
+
+  augment "/rt:routing/rt:control-plane-protocols/"
+        + "rt:control-plane-protocol/ospf:ospf/ospf:database/"
+        + "ospf:as-scope-lsa-type/ospf:as-scope-lsas/"
+        + "ospf:as-scope-lsa/ospf:version/ospf:ospfv3/ospf:ospfv3/"
+        + "ospf:body/ospfv3-e-lsa:e-as-external/"
+        + "ospfv3-e-lsa:e-external-tlvs/"
+        + "ospfv3-e-lsa:external-prefix-tlv/ospfv3-e-lsa:sub-tlvs/"
+        + "ospf-sr-mpls:prefix-sid-sub-tlvs/"
+        + "ospf-sr-mpls:prefix-sid-sub-tlv" {
+    description
+      "Augments the Prefix-SID Sub-TLV with the numeric value of the
+       advertised algorithm.";
+    leaf algorithm-number {
+      type uint8;
+      description
+        "Algorithm associated with the Prefix-SID, given by its numeric
+         value. Unlike the algorithm leaf, this is also present for
+         algorithms that have no corresponding YANG identity, such as
+         Flexible Algorithms.";
+    }
   }
 }

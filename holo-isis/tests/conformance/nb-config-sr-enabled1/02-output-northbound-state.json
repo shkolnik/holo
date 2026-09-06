@@ -284,6 +284,9 @@
                             "ietf-isis-sr-mpls:sr-algorithms": {
                               "sr-algorithm": [
                                 "ietf-segment-routing-common:prefix-sid-algorithm-shortest-path"
+                              ],
+                              "holo-isis:sr-algorithm-number": [
+                                0
                               ]
                             },
                             "ietf-isis-sr-mpls:local-blocks": {
@@ -428,7 +431,8 @@
                                     ]
                                   },
                                   "algorithm": "ietf-segment-routing-common:prefix-sid-algorithm-shortest-path",
-                                  "index-value": 30
+                                  "index-value": 30,
+                                  "holo-isis:algorithm-number": 0
                                 }
                               ]
                             }
@@ -472,7 +476,8 @@
                                     ]
                                   },
                                   "algorithm": "ietf-segment-routing-common:prefix-sid-algorithm-shortest-path",
-                                  "index-value": 31
+                                  "index-value": 31,
+                                  "holo-isis:algorithm-number": 0
                                 }
                               ]
                             }

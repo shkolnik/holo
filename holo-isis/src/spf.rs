@@ -1322,7 +1322,7 @@ fn vertex_networks<'a>(
                                 prefix_sid: reach
                                     .sub_tlvs
                                     .prefix_sids
-                                    .get(&PrefixSidAlgo::Spf)
+                                    .get(&(PrefixSidAlgo::Spf as u8))
                                     .cloned(),
                             }
                         });
@@ -1353,7 +1353,7 @@ fn vertex_networks<'a>(
                         prefix_sid: reach
                             .sub_tlvs
                             .prefix_sids
-                            .get(&PrefixSidAlgo::Spf)
+                            .get(&(PrefixSidAlgo::Spf as u8))
                             .cloned(),
                     });
                 ipv6_iter = Some(iter);

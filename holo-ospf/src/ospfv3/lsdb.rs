@@ -370,7 +370,7 @@ impl LsdbVersion<Self> for Ospfv3 {
                 flags.remove(PrefixSidFlags::E);
             }
 
-            prefix_sids.insert(PrefixSidAlgo::Spf, prefix_sid);
+            prefix_sids.insert(PrefixSidAlgo::Spf as u8, prefix_sid);
         }
 
         // (Re)originate Inter-Area-Network-LSA.
@@ -912,7 +912,7 @@ fn lsa_orig_intra_area_prefix(
                 }
                 SidLastHopBehavior::Php => (),
             }
-            let algo = PrefixSidAlgo::Spf;
+            let algo = PrefixSidAlgo::Spf as u8;
             let sid = Sid::Index(prefix_sid.index);
             entry
                 .prefix_sids
@@ -1147,7 +1147,7 @@ fn lsa_orig_router_info(
     let mut node_tags = vec![];
     if instance.config.sr_enabled {
         // Fill in supported SR algorithms.
-        sr_algo = Some(SrAlgoTlv::new([PrefixSidAlgo::Spf].into()));
+        sr_algo = Some(SrAlgoTlv::new([PrefixSidAlgo::Spf as u8].into()));
 
         // Fill in local SRGB.
         for range in &sr_config.srgb {

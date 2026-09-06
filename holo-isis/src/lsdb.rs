@@ -482,7 +482,7 @@ fn lsp_build_tlvs_router_cap(
 
         // Add SR-Algorithm Sub-TLV.
         cap.sub_tlvs.sr_algo =
-            Some(SrAlgoStlv::new([PrefixSidAlgo::Spf].into()));
+            Some(SrAlgoStlv::new([PrefixSidAlgo::Spf as u8].into()));
 
         // Add SR Local Block Sub-TLV.
         let mut srlb = vec![];
@@ -1032,7 +1032,7 @@ fn lsp_build_ipv4_reach_stlvs(
             .get(&(prefix.into(), algo))
         {
             let prefix_sid = lsp_build_prefix_sid_stlv(prefix_sid_cfg);
-            sub_tlvs.prefix_sids.insert(algo, prefix_sid);
+            sub_tlvs.prefix_sids.insert(algo as u8, prefix_sid);
         }
     }
 
@@ -1072,7 +1072,7 @@ fn lsp_build_ipv6_reach_stlvs(
             .get(&(prefix.into(), algo))
         {
             let prefix_sid = lsp_build_prefix_sid_stlv(prefix_sid_cfg);
-            sub_tlvs.prefix_sids.insert(algo, prefix_sid);
+            sub_tlvs.prefix_sids.insert(algo as u8, prefix_sid);
         }
     }
 
@@ -1139,7 +1139,7 @@ fn lsp_build_prefix_sid_stlv(prefix_sid_cfg: &SrCfgPrefixSid) -> PrefixSidStlv {
         }
         SidLastHopBehavior::Php => (),
     }
-    let algo = PrefixSidAlgo::Spf;
+    let algo = PrefixSidAlgo::Spf as u8;
     let sid = Sid::Index(prefix_sid_cfg.index);
     PrefixSidStlv::new(flags, algo, sid)
 }

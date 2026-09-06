@@ -14,7 +14,7 @@ use derive_new::new;
 use holo_utils::bier::{BierEncapId, BiftId};
 use holo_utils::bytes::{Bytes, BytesMut};
 use holo_utils::mpls::Label;
-use holo_utils::sr::{PrefixSidAlgo, Sid};
+use holo_utils::sr::Sid;
 use num_traits::FromPrimitive;
 use serde::{Deserialize, Serialize};
 
@@ -67,7 +67,7 @@ bitflags! {
 #[derive(Deserialize, Serialize)]
 pub struct PrefixSidStlv {
     pub flags: PrefixSidFlags,
-    pub algo: PrefixSidAlgo,
+    pub algo: u8,
     pub sid: Sid,
 }
 
@@ -227,10 +227,6 @@ impl PrefixSidStlv {
         let flags = buf.try_get_u8()?;
         let flags = PrefixSidFlags::from_bits_truncate(flags);
         let algo = buf.try_get_u8()?;
-        let Some(algo) = PrefixSidAlgo::from_u8(algo) else {
-            // Unsupported algorithm - ignore.
-            return Ok(None);
-        };
 
         // Parse SID (variable length).
         let sid = if !flags.intersects(PrefixSidFlags::V | PrefixSidFlags::L) {
@@ -249,7 +245,7 @@ impl PrefixSidStlv {
     pub(crate) fn encode(&self, buf: &mut BytesMut) {
         let start_pos = tlv_encode_start(buf, PrefixStlvType::PrefixSid);
         buf.put_u8(self.flags.bits());
-        buf.put_u8(self.algo as u8);
+        buf.put_u8(self.algo);
         match self.sid {
             Sid::Index(index) => buf.put_u32(index),
             Sid::Label(label) => buf.put_u24(label.get()),

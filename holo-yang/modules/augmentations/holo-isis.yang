@@ -31,6 +31,10 @@ module holo-isis {
     prefix isis-link-attr;
   }
 
+  import ietf-isis-sr-mpls {
+    prefix isis-sr-mpls;
+  }
+
   organization
     "Holo Routing Stack";
 
@@ -889,6 +893,100 @@ module holo-isis {
           }
         }
       }
+    }
+  }
+
+  augment "/rt:routing/rt:control-plane-protocols/"
+        + "rt:control-plane-protocol/isis:isis/"
+        + "isis:database/isis:levels/isis:lsp/"
+        + "isis:router-capabilities/isis:router-capability/"
+        + "isis-sr-mpls:sr-algorithms" {
+    description
+      "Augments the SR-Algorithm sub-TLV with the numeric value of the
+       advertised algorithms.";
+    leaf-list sr-algorithm-number {
+      type uint8;
+      description
+        "The SR algorithms that the router is currently using, given by
+         their numeric value. Unlike the sr-algorithm leaf-list, this also
+         covers algorithms that have no corresponding YANG identity, such
+         as Flexible Algorithms.";
+    }
+  }
+
+  augment "/rt:routing/rt:control-plane-protocols/"
+        + "rt:control-plane-protocol/isis:isis/"
+        + "isis:database/isis:levels/isis:lsp/"
+        + "isis:extended-ipv4-reachability/isis:prefixes/"
+        + "isis-sr-mpls:prefix-sid-sub-tlvs/"
+        + "isis-sr-mpls:prefix-sid-sub-tlv" {
+    description
+      "Augments the Prefix-SID sub-TLV with the numeric value of the
+       advertised algorithm.";
+    leaf algorithm-number {
+      type uint8;
+      description
+        "Algorithm to be used for path computation, given by its numeric
+         value. Unlike the algorithm leaf, this is also present for
+         algorithms that have no corresponding YANG identity, such as
+         Flexible Algorithms.";
+    }
+  }
+
+  augment "/rt:routing/rt:control-plane-protocols/"
+        + "rt:control-plane-protocol/isis:isis/"
+        + "isis:database/isis:levels/isis:lsp/"
+        + "isis:mt-extended-ipv4-reachability/isis:prefixes/"
+        + "isis-sr-mpls:prefix-sid-sub-tlvs/"
+        + "isis-sr-mpls:prefix-sid-sub-tlv" {
+    description
+      "Augments the Prefix-SID sub-TLV with the numeric value of the
+       advertised algorithm.";
+    leaf algorithm-number {
+      type uint8;
+      description
+        "Algorithm to be used for path computation, given by its numeric
+         value. Unlike the algorithm leaf, this is also present for
+         algorithms that have no corresponding YANG identity, such as
+         Flexible Algorithms.";
+    }
+  }
+
+  augment "/rt:routing/rt:control-plane-protocols/"
+        + "rt:control-plane-protocol/isis:isis/"
+        + "isis:database/isis:levels/isis:lsp/"
+        + "isis:ipv6-reachability/isis:prefixes/"
+        + "isis-sr-mpls:prefix-sid-sub-tlvs/"
+        + "isis-sr-mpls:prefix-sid-sub-tlv" {
+    description
+      "Augments the Prefix-SID sub-TLV with the numeric value of the
+       advertised algorithm.";
+    leaf algorithm-number {
+      type uint8;
+      description
+        "Algorithm to be used for path computation, given by its numeric
+         value. Unlike the algorithm leaf, this is also present for
+         algorithms that have no corresponding YANG identity, such as
+         Flexible Algorithms.";
+    }
+  }
+
+  augment "/rt:routing/rt:control-plane-protocols/"
+        + "rt:control-plane-protocol/isis:isis/"
+        + "isis:database/isis:levels/isis:lsp/"
+        + "isis:mt-ipv6-reachability/isis:prefixes/"
+        + "isis-sr-mpls:prefix-sid-sub-tlvs/"
+        + "isis-sr-mpls:prefix-sid-sub-tlv" {
+    description
+      "Augments the Prefix-SID sub-TLV with the numeric value of the
+       advertised algorithm.";
+    leaf algorithm-number {
+      type uint8;
+      description
+        "Algorithm to be used for path computation, given by its numeric
+         value. Unlike the algorithm leaf, this is also present for
+         algorithms that have no corresponding YANG identity, such as
+         Flexible Algorithms.";
     }
   }
 }

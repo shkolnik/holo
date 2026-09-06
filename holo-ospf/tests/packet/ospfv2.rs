@@ -907,7 +907,9 @@ static LSA2: Lazy<(Vec<u8>, Lsa<Ospfv2>)> = Lazy::new(|| {
             LsaBody::OpaqueArea(LsaOpaque::RouterInfo(LsaRouterInfo {
                 info_caps: Some(RouterInfoCaps::TE.into()),
                 func_caps: None,
-                sr_algo: Some(SrAlgoTlv::new(btreeset!(PrefixSidAlgo::Spf))),
+                sr_algo: Some(SrAlgoTlv::new(btreeset!(
+                    PrefixSidAlgo::Spf as u8
+                ))),
                 srgb: vec![SidLabelRangeTlv::new(
                     Sid::Label(Label::new(16000)),
                     8000,
@@ -952,10 +954,10 @@ static LSA3: Lazy<(Vec<u8>, Lsa<Ospfv2>)> = Lazy::new(|| {
                             flags: LsaExtPrefixFlags::N,
                             prefix: net4!("1.1.1.1/32"),
                             prefix_sids: btreemap! {
-                                PrefixSidAlgo::Spf => {
+                                PrefixSidAlgo::Spf as u8 => {
                                     PrefixSid {
                                         flags: PrefixSidFlags::empty(),
-                                        algo: PrefixSidAlgo::Spf,
+                                        algo: PrefixSidAlgo::Spf as u8,
                                         sid: Sid::Index(10),
                                     }
                                 }

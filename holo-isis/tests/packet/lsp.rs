@@ -125,7 +125,7 @@ static LSP1: Lazy<(Vec<u8>, Option<&Key>, Pdu)> = Lazy::new(|| {
                             )],
                         )),
                         sr_algo: Some(SrAlgoStlv::new(
-                            [PrefixSidAlgo::Spf].into(),
+                            [PrefixSidAlgo::Spf as u8].into(),
                         )),
                         srlb: Some(SrLocalBlockStlv::new(vec![
                             LabelBlockEntry::new(
@@ -287,10 +287,10 @@ static LSP1: Lazy<(Vec<u8>, Option<&Key>, Pdu)> = Lazy::new(|| {
                                     ip6!("2001:db8::1"),
                                 )),
                                 prefix_sids: btreemap! {
-                                    PrefixSidAlgo::Spf => {
+                                    PrefixSidAlgo::Spf as u8 => {
                                         PrefixSidStlv {
                                             flags: PrefixSidFlags::N,
-                                            algo: PrefixSidAlgo::Spf,
+                                            algo: PrefixSidAlgo::Spf as u8,
                                             sid: Sid::Index(10),
                                         }
                                     }
@@ -333,10 +333,10 @@ static LSP1: Lazy<(Vec<u8>, Option<&Key>, Pdu)> = Lazy::new(|| {
                                     ip6!("2001:db8::1"),
                                 )),
                                 prefix_sids: btreemap! {
-                                    PrefixSidAlgo::Spf => {
+                                    PrefixSidAlgo::Spf as u8 => {
                                         PrefixSidStlv {
                                             flags: PrefixSidFlags::N,
-                                            algo: PrefixSidAlgo::Spf,
+                                            algo: PrefixSidAlgo::Spf as u8,
                                             sid: Sid::Index(11),
                                         }
                                     }

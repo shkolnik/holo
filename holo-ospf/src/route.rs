@@ -421,7 +421,8 @@ fn update_rib_intra_area<V>(
 
         // Update route's Prefix-SID (if any).
         if instance.config.sr_enabled
-            && let Some(prefix_sid) = stub.prefix_sids.get(&PrefixSidAlgo::Spf)
+            && let Some(prefix_sid) =
+                stub.prefix_sids.get(&(PrefixSidAlgo::Spf as u8))
         {
             let local = stub.vertex.hops == 0;
             let last_hop = stub.vertex.hops == 1;
@@ -513,7 +514,8 @@ fn update_rib_inter_area_networks<V>(
 
         // Update route's Prefix-SID (if any).
         if instance.config.sr_enabled
-            && let Some(prefix_sid) = lsa.prefix_sids.get(&PrefixSidAlgo::Spf)
+            && let Some(prefix_sid) =
+                lsa.prefix_sids.get(&(PrefixSidAlgo::Spf as u8))
         {
             sr::prefix_sid_update(
                 area,
@@ -602,7 +604,8 @@ fn update_rib_transit_area<V>(
 
         // Update route's Prefix-SID (if any).
         if instance.config.sr_enabled
-            && let Some(prefix_sid) = lsa.prefix_sids.get(&PrefixSidAlgo::Spf)
+            && let Some(prefix_sid) =
+                lsa.prefix_sids.get(&(PrefixSidAlgo::Spf as u8))
         {
             sr::prefix_sid_update(
                 area,

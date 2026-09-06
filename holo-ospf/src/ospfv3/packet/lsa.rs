@@ -13,7 +13,7 @@ use enum_as_inner::EnumAsInner;
 use holo_utils::bytes::{Bytes, BytesMut};
 use holo_utils::ip::{AddressFamily, IpAddrExt, Ipv4AddrExt, Ipv6AddrExt};
 use holo_utils::mpls::Label;
-use holo_utils::sr::{PrefixSidAlgo, Sid};
+use holo_utils::sr::Sid;
 use ipnetwork::IpNetwork;
 use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::FromPrimitive;
@@ -163,7 +163,7 @@ pub struct ExtLsaStlvs {
     pub ipv6_fwd_addr: Option<Ipv6Addr>,
     pub ipv4_fwd_addr: Option<Ipv4Addr>,
     pub route_tag: Option<u32>,
-    pub prefix_sids: BTreeMap<PrefixSidAlgo, PrefixSid>,
+    pub prefix_sids: BTreeMap<u8, PrefixSid>,
     pub adj_sids: Vec<AdjSid>,
     pub bier: Vec<BierStlv>,
     pub unknown: Vec<UnknownTlv>,
@@ -188,7 +188,7 @@ pub struct ExtLsaStlvs {
 #[derive(Deserialize, Serialize)]
 pub struct PrefixSid {
     pub flags: PrefixSidFlags,
-    pub algo: PrefixSidAlgo,
+    pub algo: u8,
     pub sid: Sid,
 }
 
@@ -430,7 +430,7 @@ pub struct LsaInterAreaPrefix {
     pub metric: u32,
     pub prefix_options: PrefixOptions,
     pub prefix: IpNetwork,
-    pub prefix_sids: BTreeMap<PrefixSidAlgo, PrefixSid>,
+    pub prefix_sids: BTreeMap<u8, PrefixSid>,
     #[new(default)]
     pub unknown_tlvs: Vec<UnknownTlv>,
     #[new(default)]
@@ -571,7 +571,7 @@ pub struct LsaAsExternal {
     pub ref_lsa_type: Option<LsaType>,
     pub ref_lsa_id: Option<Ipv4Addr>,
     #[new(default)]
-    pub prefix_sids: BTreeMap<PrefixSidAlgo, PrefixSid>,
+    pub prefix_sids: BTreeMap<u8, PrefixSid>,
     #[new(default)]
     pub unknown_tlvs: Vec<UnknownTlv>,
     #[new(default)]
@@ -780,7 +780,7 @@ pub struct LsaIntraAreaPrefixEntry {
     pub value: IpNetwork,
     pub metric: u16,
     #[new(default)]
-    pub prefix_sids: BTreeMap<PrefixSidAlgo, PrefixSid>,
+    pub prefix_sids: BTreeMap<u8, PrefixSid>,
     #[new(default)]
     pub bier: Vec<BierStlv>,
     #[new(default)]
@@ -2606,10 +2606,6 @@ impl ExtLsaStlvs {
                     let flags = buf_stlv.try_get_u8()?;
                     let flags = PrefixSidFlags::from_bits_truncate(flags);
                     let algo = buf_stlv.try_get_u8()?;
-                    let Some(algo) = PrefixSidAlgo::from_u8(algo) else {
-                        // Unsupported algorithm - ignore.
-                        continue;
-                    };
 
                     let _reserved = buf_stlv.try_get_u16()?;
 
@@ -2699,7 +2695,7 @@ impl ExtLsaStlvs {
         for (algo, prefix_sid) in &self.prefix_sids {
             let start_pos = tlv_encode_start(buf, ExtLsaStlv::PrefixSid);
             buf.put_u8(prefix_sid.flags.bits());
-            buf.put_u8(*algo as u8);
+            buf.put_u8(*algo);
             buf.put_u16(0);
             match prefix_sid.sid {
                 Sid::Index(index) => buf.put_u32(index),
