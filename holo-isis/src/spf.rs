@@ -63,9 +63,14 @@ pub struct Topologies<T> {
     pub ipv6_unicast: T,
 }
 
-// Candidate list (TENT) of vertices that are pending insertion into the SPT,
-// keyed by their distance to the root.
-type CandidateList = BTreeMap<(u32, VertexId), Vertex>;
+// Candidate list (TENT) of vertices that are pending insertion into the SPT.
+#[derive(Debug)]
+struct CandidateList {
+    // Pending vertices, keyed by their identifier.
+    vertices: BTreeMap<VertexId, Vertex>,
+    // Pending vertices ordered by their distance to the root.
+    queue: BTreeSet<(u32, VertexId)>,
+}
 
 // Shortest Path Tree.
 #[derive(Debug, Default)]
@@ -213,6 +218,66 @@ impl<T> Topologies<T> {
         match mt_id {
             MtId::Standard => &mut self.standard,
             MtId::Ipv6Unicast => &mut self.ipv6_unicast,
+        }
+    }
+}
+
+// ===== impl CandidateList =====
+
+impl CandidateList {
+    // Creates a candidate list seeded with the root vertex.
+    fn new(root_system_id: SystemId) -> CandidateList {
+        let id = VertexId::from(root_system_id);
+        CandidateList {
+            vertices: BTreeMap::from([(id, Vertex::new(id, 0, 0))]),
+            queue: BTreeSet::from([(0, id)]),
+        }
+    }
+
+    // Removes and returns the vertex closest to the root.
+    fn pop_first(&mut self) -> Option<Vertex> {
+        let (_, id) = self.queue.pop_first()?;
+        self.vertices.remove(&id)
+    }
+
+    // Returns a mutable reference to the entry of the given vertex, adding it
+    // to the candidate list if necessary.
+    //
+    // Returns `None` if the candidate list already contains a shorter path to
+    // that vertex.
+    fn entry(
+        &mut self,
+        id: VertexId,
+        distance: u32,
+        hops: u16,
+    ) -> Option<&mut Vertex> {
+        match self.vertices.entry(id) {
+            btree_map::Entry::Vacant(v) => {
+                // Add the vertex to the candidate list.
+                let vertex = Vertex::new(id, distance, hops);
+                self.queue.insert((distance, id));
+                Some(v.insert(vertex))
+            }
+            btree_map::Entry::Occupied(o) => {
+                let cand_v = o.into_mut();
+
+                // Ignore higher cost path.
+                if distance > cand_v.distance {
+                    return None;
+                }
+
+                // Update the vertex to use the shorter path.
+                if distance < cand_v.distance {
+                    self.queue.remove(&(cand_v.distance, id));
+                    self.queue.insert((distance, id));
+                    cand_v.distance = distance;
+                    cand_v.hops = hops;
+                    cand_v.parents.clear();
+                    cand_v.nexthops.clear();
+                }
+
+                Some(cand_v)
+            }
         }
     }
 }
@@ -570,12 +635,10 @@ pub(crate) fn compute_spt(
 
     // Initialize the SPT and the candidate list containing the root vertex.
     let mut spt = Spt::default();
-    let mut cand_list = CandidateList::new();
-    let root_v = Vertex::new(VertexId::from(root_system_id), 0, 0);
-    cand_list.insert((root_v.distance, root_v.id), root_v);
+    let mut cand_list = CandidateList::new(root_system_id);
 
     // Main SPF loop.
-    while let Some((_, cand_v)) = cand_list.pop_first() {
+    while let Some(cand_v) = cand_list.pop_first() {
         // Add vertex to SPT.
         let vertex_idx = spt.insert(cand_v);
         let vertex = &spt.arena[vertex_idx];
@@ -631,9 +694,7 @@ pub(crate) fn compute_spt(
 
             // Add the link's vertex to the candidate list, unless a shorter
             // path to it is already known.
-            let Some(cand_v) =
-                candidate_entry(&mut cand_list, link.id, distance, hops)
-            else {
+            let Some(cand_v) = cand_list.entry(link.id, distance, hops) else {
                 continue;
             };
             cand_v.parents.push(vertex_idx);
@@ -788,39 +849,6 @@ fn compute_spf(
         end_time,
         trigger_lsps.into_values().collect(),
     );
-}
-
-// Returns a mutable reference to the candidate list entry of the given vertex,
-// adding it to the candidate list if necessary.
-//
-// Returns `None` if the candidate list already contains a shorter path to that
-// vertex.
-fn candidate_entry(
-    cand_list: &mut CandidateList,
-    id: VertexId,
-    distance: u32,
-    hops: u16,
-) -> Option<&mut Vertex> {
-    // Check if the vertex is already present on the candidate list.
-    if let Some((key, cand_v)) =
-        cand_list.iter().find(|(_, cand_v)| cand_v.id == id)
-    {
-        // Ignore higher cost path.
-        if distance > cand_v.distance {
-            return None;
-        }
-        // Remove the vertex since its key has changed. It's re-added with the
-        // correct key below.
-        if distance < cand_v.distance {
-            let key = *key;
-            cand_list.remove(&key);
-        }
-    }
-
-    let cand_v = cand_list
-        .entry((distance, id))
-        .or_insert_with(|| Vertex::new(id, distance, hops));
-    Some(cand_v)
 }
 
 // Computes routing table based on the SPT and IP prefix information extracted
