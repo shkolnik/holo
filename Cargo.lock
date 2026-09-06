@@ -2149,9 +2149,9 @@ checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
 
 [[package]]
 name = "libyang5-sys"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d2af2bd5e6a586aee12e07735a223e232969686ac4ac5b7af639e555ec4a1e1"
+checksum = "a730d258bf66b488cd72a221fe888098491b84c6c09d65187ec5a3cee6cb6523"
 dependencies = [
  "cmake",
  "pkg-config",
@@ -4498,9 +4498,9 @@ checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
 
 [[package]]
 name = "yang5"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a4d3b8d5cfe5695c70e683afefe43edef0ee3fb1abf3358d14a92f96988cb30"
+checksum = "b4ccc69999c31a45560b6d43e5c764a0db687e98795503aba4d12d9917ee7fbe"
 dependencies = [
  "bitflags 2.13.1",
  "libc",

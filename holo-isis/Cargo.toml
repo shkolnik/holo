@@ -15,9 +15,7 @@ generational-arena.workspace = true
 hmac.workspace = true
 ipnetwork.workspace = true
 itertools.workspace = true
-libc.workspace = true
 md-5.workspace = true
-nix.workspace = true
 num-derive.workspace = true
 num-traits.workspace = true
 phf.workspace = true
@@ -29,7 +27,6 @@ serde_with.workspace = true
 sha1.workspace = true
 sha2.workspace = true
 smallvec.workspace = true
-socket2.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 yang5.workspace = true
@@ -39,9 +36,13 @@ holo-protocol = { path = "../holo-protocol" }
 holo-utils = { path = "../holo-utils" }
 holo-yang = { path = "../holo-yang" }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+libc.workspace = true
+nix.workspace = true
+socket2.workspace = true
+
 [dev-dependencies]
 const-addrs.workspace = true
-criterion.workspace = true
 maplit.workspace = true
 yang5 = { workspace = true, features = ["bundled"] }
 
@@ -49,6 +50,9 @@ holo-isis = { path = ".", features = ["testing", "deterministic"] }
 holo-northbound = { path = "../holo-northbound", features = ["testing"] }
 holo-protocol = { path = "../holo-protocol", features = ["testing"] }
 holo-utils = { path = "../holo-utils", features = ["testing"] }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+criterion.workspace = true
 
 [build-dependencies]
 yang5 = { workspace = true, features = ["bundled"] }

@@ -18,9 +18,12 @@ use holo_utils::capabilities;
 use holo_utils::keychain::Key;
 use holo_utils::mac_addr::MacAddr;
 use holo_utils::socket::{AsyncFd, LinkAddrExt, Socket};
+#[cfg(target_os = "linux")]
 use nix::sys::socket;
+#[cfg(target_os = "linux")]
 use nix::sys::socket::LinkAddr;
 use serde::Serialize;
+#[cfg(target_os = "linux")]
 use socket2::SockFilter;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{Sender, UnboundedReceiver};
@@ -51,6 +54,7 @@ pub enum MulticastAddr {
 
 // BPF filter that accepts IS-IS over LLC and IS-IS over ethertype 0x00FE
 // (e.g. GRE tunnels). Shamelessly copied from FRR!
+#[cfg(target_os = "linux")]
 const ISIS_BPF_FILTER: [SockFilter; 10] = [
     // l0: ldh [0]
     SockFilter::new(0x28, 0, 0, 0x00000000),

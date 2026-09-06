@@ -4,10 +4,13 @@
 // SPDX-License-Identifier: MIT
 //
 
+#[cfg(target_os = "linux")]
 use capctl::caps::CapState;
+#[cfg(target_os = "linux")]
 use tracing::error;
 
 /// Runs the provided closure with elevated capabilities.
+#[cfg(target_os = "linux")]
 pub fn raise<F, R>(cb: F) -> R
 where
     F: FnOnce() -> R,
@@ -30,4 +33,16 @@ where
 
     // Return the closure's return value.
     ret
+}
+
+/// Runs the provided closure.
+///
+/// Capabilities are a Linux concept, and the platforms without them have
+/// nothing that would require raising any.
+#[cfg(not(target_os = "linux"))]
+pub fn raise<F, R>(cb: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    cb()
 }

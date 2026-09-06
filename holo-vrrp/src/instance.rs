@@ -511,7 +511,7 @@ impl Instance {
     pub(crate) fn send_gratuitous_arp(&self) {
         // Send a gratuitous for each of the virtual IP addresses.
         let eth_hdr = EthernetHdr {
-            ethertype: libc::ETH_P_ARP as _,
+            ethertype: network::ETHERTYPE_ARP,
             dst_mac: MacAddr::BROADCAST,
             src_mac: self.mvlan.system.mac_address,
         };

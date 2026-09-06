@@ -17,6 +17,7 @@ use holo_utils::bfd::PathType;
 use holo_utils::capabilities;
 use holo_utils::ip::{AddressFamily, IpAddrExt};
 use holo_utils::socket::{SocketExt, TTL_MAX, UdpSocket, UdpSocketExt};
+#[cfg(target_os = "linux")]
 use nix::sys::socket::{self, ControlMessageOwned};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::Sender;

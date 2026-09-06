@@ -11,6 +11,7 @@ use holo_utils::bytes::Bytes;
 use holo_utils::capabilities;
 use holo_utils::socket::{RawSocketExt, Socket};
 use ipnetwork::Ipv6Network;
+#[cfg(target_os = "linux")]
 use nix::sys::socket::{self, SockaddrIn6};
 
 use crate::network::{MulticastAddr, NetworkVersion, OSPF_IP_PROTO};
@@ -27,7 +28,9 @@ static ALL_DR_RTRS: Ipv6Addr = ip6!("FF02::6");
 impl NetworkVersion<Self> for Ospfv3 {
     type NetIpAddr = Ipv6Addr;
     type NetIpNetwork = Ipv6Network;
+    #[cfg(target_os = "linux")]
     type SocketAddr = SockaddrIn6;
+    #[cfg(target_os = "linux")]
     type Pktinfo = libc::in6_pktinfo;
 
     fn socket(ifname: Option<&str>) -> Result<Socket, std::io::Error> {
@@ -122,6 +125,7 @@ impl NetworkVersion<Self> for Ospfv3 {
         }
     }
 
+    #[cfg(target_os = "linux")]
     fn new_pktinfo(src: Ipv6Addr, ifindex: u32) -> libc::in6_pktinfo {
         libc::in6_pktinfo {
             ipi6_addr: libc::in6_addr {
@@ -131,12 +135,14 @@ impl NetworkVersion<Self> for Ospfv3 {
         }
     }
 
+    #[cfg(target_os = "linux")]
     fn set_cmsg_data(
         pktinfo: &libc::in6_pktinfo,
     ) -> socket::ControlMessage<'_> {
         socket::ControlMessage::Ipv6PacketInfo(pktinfo)
     }
 
+    #[cfg(target_os = "linux")]
     fn get_cmsg_data(mut cmsgs: socket::CmsgIterator<'_>) -> Option<Ipv6Addr> {
         cmsgs.find_map(|cmsg| {
             if let socket::ControlMessageOwned::Ipv6PacketInfo(pktinfo) = cmsg {
@@ -148,10 +154,12 @@ impl NetworkVersion<Self> for Ospfv3 {
         })
     }
 
+    #[cfg(target_os = "linux")]
     fn dst_to_sockaddr(ifindex: u32, addr: Ipv6Addr) -> SockaddrIn6 {
         std::net::SocketAddrV6::new(addr, 0, 0, ifindex).into()
     }
 
+    #[cfg(target_os = "linux")]
     fn src_from_sockaddr(sockaddr: &SockaddrIn6) -> Ipv6Addr {
         sockaddr.ip()
     }

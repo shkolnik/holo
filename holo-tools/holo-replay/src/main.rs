@@ -32,7 +32,7 @@ async fn replay<P: ProtocolInstance>(filename: &str) {
     stub.close().await;
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
     // Parse command-line parameters.
     let matches = App::new("Replay events")

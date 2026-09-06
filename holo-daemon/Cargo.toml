@@ -26,7 +26,7 @@ pickledb.workspace = true
 prost.workspace = true
 rustc_tools_util.workspace = true
 serde.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["net", "rt-multi-thread", "signal"] }
 tonic.workspace = true
 tonic-prost.workspace = true
 tracing.workspace = true

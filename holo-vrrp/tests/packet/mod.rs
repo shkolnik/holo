@@ -14,6 +14,7 @@ use holo_protocol::assert_eq_hex;
 use holo_utils::ip::AddressFamily;
 use holo_utils::mac_addr::MacAddr;
 use holo_vrrp::instance::Version;
+use holo_vrrp::network::ETHERTYPE_IP;
 use holo_vrrp::packet::{DecodeError, EthernetHdr, Ipv4Hdr, VrrpHdr};
 
 static VRRPV2HDR: LazyLock<(Vec<u8>, VrrpHdr)> = LazyLock::new(|| {
@@ -78,7 +79,7 @@ static ETHERNETHDR: LazyLock<(Vec<u8>, EthernetHdr)> = LazyLock::new(|| {
         EthernetHdr {
             dst_mac: MacAddr::from([0x01, 0x00, 0x5e, 0x00, 0x00, 0x12]),
             src_mac: MacAddr::from([0x00, 0x00, 0x5e, 0x00, 0x01, 0x33]),
-            ethertype: libc::ETH_P_IP as _,
+            ethertype: ETHERTYPE_IP,
         },
     )
 });

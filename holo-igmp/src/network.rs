@@ -14,6 +14,7 @@ use const_addrs::ip4;
 use holo_utils::bytes::{Bytes, TryGetError};
 use holo_utils::capabilities;
 use holo_utils::socket::{AsyncFd, RawSocketExt, Socket};
+#[cfg(target_os = "linux")]
 use nix::sys::socket::{self, SockaddrIn};
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{Sender, UnboundedReceiver};

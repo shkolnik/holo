@@ -25,8 +25,9 @@ use holo_utils::socket::{
 };
 use internet_checksum::Checksum;
 use ipnetwork::IpNetwork;
-use libc::ETH_P_ARP;
+#[cfg(target_os = "linux")]
 use nix::sys::socket::{self, LinkAddr, SockaddrIn, SockaddrIn6};
+#[cfg(target_os = "linux")]
 use socket2::{Domain, Protocol, Type};
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{Sender, UnboundedReceiver};
@@ -44,6 +45,10 @@ use crate::tasks::messages::output::NetTxPacketMsg;
 // VRRP protocol number.
 pub const VRRP_PROTO_NUMBER: i32 = 112;
 pub const ICMP_PROTO_NUMBER: i32 = 58;
+
+// EtherTypes.
+pub const ETHERTYPE_IP: u16 = 0x0800;
+pub const ETHERTYPE_ARP: u16 = 0x0806;
 
 // VRRP multicast addresses.
 pub static VRRP_MULTICAST_ADDR_IPV4: Ipv4Addr = ip4!("224.0.0.18");
@@ -177,7 +182,7 @@ pub(crate) fn socket_arp(ifname: &str) -> Result<Socket, std::io::Error> {
             Socket::new(
                 Domain::PACKET,
                 Type::RAW,
-                Some(Protocol::from(ETH_P_ARP)),
+                Some(Protocol::from(ETHERTYPE_ARP as i32)),
             )
         })?;
         capabilities::raise(|| socket.bind_device(Some(ifname.as_bytes())))?;
@@ -326,11 +331,8 @@ async fn send_packet_arp(
 
     // Send packet.
     let iov = [IoSlice::new(&buf)];
-    let sockaddr = LinkAddr::new(
-        libc::ETH_P_ARP as u16,
-        ifindex,
-        Some(eth_hdr.dst_mac.as_bytes()),
-    );
+    let sockaddr =
+        LinkAddr::new(ETHERTYPE_ARP, ifindex, Some(eth_hdr.dst_mac.as_bytes()));
     socket
         .async_io(tokio::io::Interest::WRITABLE, |socket| {
             socket::sendmsg(

@@ -472,7 +472,7 @@ impl RteVersion<Ipv4Addr, Ipv4Network> for Rte {
 // ===== impl RteZero =====
 
 impl RteZero {
-    const AFI: u16 = libc::AF_UNSPEC as u16;
+    const AFI: u16 = 0;
 
     pub(crate) fn encode(&self, buf: &mut BytesMut) {
         buf.put_u16(Self::AFI);
@@ -501,7 +501,7 @@ impl RteZero {
 // ===== impl RteIpv4 =====
 
 impl RteIpv4 {
-    const AFI: u16 = libc::AF_INET as u16;
+    const AFI: u16 = 2;
 
     pub(crate) fn encode(&self, buf: &mut BytesMut) {
         buf.put_u16(Self::AFI);

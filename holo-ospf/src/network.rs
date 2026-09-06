@@ -14,6 +14,7 @@ use arc_swap::ArcSwap;
 use holo_utils::bytes::Bytes;
 use holo_utils::ip::{AddressFamily, IpAddrKind, IpNetworkKind};
 use holo_utils::socket::{AsyncFd, Socket};
+#[cfg(target_os = "linux")]
 use nix::sys::socket::{self, SockaddrLike};
 use serde::Serialize;
 use tokio::sync::mpsc::error::SendError;
@@ -43,7 +44,9 @@ pub enum MulticastAddr {
 pub trait NetworkVersion<V: Version> {
     type NetIpAddr: IpAddrKind;
     type NetIpNetwork: IpNetworkKind<Self::NetIpAddr>;
+    #[cfg(target_os = "linux")]
     type SocketAddr: SockaddrLike + Send + Sync;
+    #[cfg(target_os = "linux")]
     type Pktinfo: Send + Sync;
 
     // Create OSPF socket.
@@ -76,18 +79,23 @@ pub trait NetworkVersion<V: Version> {
     ) -> Result<(), std::io::Error>;
 
     // Create new IP_PKTINFO/IPV6_PKTINFO struct.
+    #[cfg(target_os = "linux")]
     fn new_pktinfo(src: V::NetIpAddr, ifindex: u32) -> V::Pktinfo;
 
     // Initialize the control message used by `sendmsg`.
+    #[cfg(target_os = "linux")]
     fn set_cmsg_data(pktinfo: &V::Pktinfo) -> socket::ControlMessage<'_>;
 
     // Get destination address from the control message of a received packet.
+    #[cfg(target_os = "linux")]
     fn get_cmsg_data(cmsgs: socket::CmsgIterator<'_>) -> Option<V::NetIpAddr>;
 
     // Convert packet destination to socket address.
+    #[cfg(target_os = "linux")]
     fn dst_to_sockaddr(ifindex: u32, addr: V::NetIpAddr) -> V::SocketAddr;
 
     // Convert socket address to packet source address.
+    #[cfg(target_os = "linux")]
     fn src_from_sockaddr(sockaddr: &V::SocketAddr) -> V::NetIpAddr;
 
     // Validate the IP header of the received packet.

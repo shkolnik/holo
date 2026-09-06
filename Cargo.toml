@@ -82,13 +82,13 @@ similar = "3.2"
 smallvec = { version = "1.16", features = ["serde"] }
 socket2 = { version = "0.6", features = ["all"] }
 sysctl = "0.7"
-tokio = { version = "1.53", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { version = "1.53", features = ["io-util", "macros", "rt", "sync", "time"] }
 tonic = { version = "0.14", features = ["tls-ring"] }
 tonic-prost = "0.14"
 tonic-prost-build = "0.14"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-yang5 = { version = "0.3" }
+yang5 = { version = "0.4" }
 
 [workspace.lints.rust]
 rust_2018_idioms = { level = "warn", priority = -1 }

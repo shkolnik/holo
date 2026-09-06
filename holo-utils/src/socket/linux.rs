@@ -10,9 +10,7 @@ use std::os::unix::io::AsRawFd;
 
 use libc::{in_addr, ip_mreqn, packet_mreq};
 use nix::sys::socket::{LinkAddr, SockaddrLike};
-use serde::{Deserialize, Serialize};
-// Normal build: re-export standard socket types.
-#[cfg(not(feature = "testing"))]
+// Re-export standard socket types.
 pub use {
     socket2::Socket,
     tokio::io::unix::AsyncFd,
@@ -21,16 +19,6 @@ pub use {
         tcp::OwnedWriteHalf,
     },
 };
-
-// TCP connection information.
-#[derive(Debug)]
-#[derive(Deserialize, Serialize)]
-pub struct TcpConnInfo {
-    pub local_addr: IpAddr,
-    pub local_port: u16,
-    pub remote_addr: IpAddr,
-    pub remote_port: u16,
-}
 
 // FFI struct used to set the TCP_MD5SIG socket option.
 #[repr(C)]
@@ -62,15 +50,7 @@ pub struct vifctl {
 }
 
 use crate::ip::{AddressFamily, IpAddrKind};
-// Test build: export mock sockets.
-#[cfg(feature = "testing")]
-pub use crate::socket::mock::{
-    AsyncFd, OwnedReadHalf, OwnedWriteHalf, Socket, TcpListener, TcpSocket,
-    TcpStream, UdpSocket,
-};
-
-// Maximum TTL for IPv4 or Hop Limit for IPv6.
-pub const TTL_MAX: u8 = 255;
+use crate::socket::TcpConnInfo;
 
 // MRT Options
 pub const MRT_INIT: c_int = 200;
@@ -424,10 +404,8 @@ pub trait LinkAddrExt {
 
 // ===== impl UdpSocket =====
 
-#[cfg(not(feature = "testing"))]
 impl SocketExt for UdpSocket {}
 
-#[cfg(not(feature = "testing"))]
 impl UdpSocketExt for UdpSocket {
     fn new(af: AddressFamily) -> Result<UdpSocket> {
         use socket2::{Domain, Type};
@@ -459,21 +437,16 @@ impl UdpSocketExt for UdpSocket {
 
 // ===== impl TcpSocket =====
 
-#[cfg(not(feature = "testing"))]
 impl SocketExt for TcpSocket {}
 
-#[cfg(not(feature = "testing"))]
 impl TcpSocketExt for TcpSocket {}
 
 // ===== impl TcpStream =====
 
-#[cfg(not(feature = "testing"))]
 impl SocketExt for TcpStream {}
 
-#[cfg(not(feature = "testing"))]
 impl TcpSocketExt for TcpStream {}
 
-#[cfg(not(feature = "testing"))]
 impl TcpStreamExt for TcpStream {
     fn conn_info(&self) -> Result<TcpConnInfo> {
         let local_addr = self.local_addr()?;
@@ -490,10 +463,8 @@ impl TcpStreamExt for TcpStream {
 
 // ===== impl TcpListener =====
 
-#[cfg(not(feature = "testing"))]
 impl SocketExt for TcpListener {}
 
-#[cfg(not(feature = "testing"))]
 impl TcpSocketExt for TcpListener {}
 
 // ===== impl LinkAddr =====
@@ -523,10 +494,8 @@ impl LinkAddrExt for LinkAddr {
 
 // ===== impl Socket =====
 
-#[cfg(not(feature = "testing"))]
 impl SocketExt for Socket {}
 
-#[cfg(not(feature = "testing"))]
 impl RawSocketExt for Socket {
     fn set_ipv4_pktinfo(&self, value: bool) -> Result<()> {
         let optval = value as c_int;
@@ -594,50 +563,6 @@ impl RawSocketExt for Socket {
             &vif as *const _ as *const libc::c_void,
             std::mem::size_of_val(&vif) as libc::socklen_t,
         )
-    }
-}
-
-// ===== Mock sockets for unit testing =====
-
-pub mod mock {
-    #[derive(Debug, Default)]
-    pub struct AsyncFd<T>(T);
-
-    #[derive(Debug, Default)]
-    pub struct Socket();
-
-    #[derive(Debug, Default)]
-    pub struct UdpSocket();
-
-    #[derive(Debug, Default)]
-    pub struct TcpSocket();
-
-    #[derive(Debug, Default)]
-    pub struct TcpListener();
-
-    #[derive(Debug, Default)]
-    pub struct TcpStream();
-
-    #[derive(Debug, Default)]
-    pub struct OwnedReadHalf();
-
-    #[derive(Debug, Default)]
-    pub struct OwnedWriteHalf();
-
-    impl<T> AsyncFd<T> {
-        pub fn new(inner: T) -> std::io::Result<Self> {
-            Ok(Self(inner))
-        }
-
-        pub fn get_ref(&self) -> &T {
-            &self.0
-        }
-    }
-
-    impl TcpStream {
-        pub fn into_split(self) -> (OwnedReadHalf, OwnedWriteHalf) {
-            (OwnedReadHalf(), OwnedWriteHalf())
-        }
     }
 }
 

@@ -11,7 +11,9 @@ use holo_utils::bytes::Bytes;
 use holo_utils::capabilities;
 use holo_utils::socket::{RawSocketExt, Socket};
 use ipnetwork::Ipv4Network;
+#[cfg(target_os = "linux")]
 use nix::sys::socket::{self, SockaddrIn};
+#[cfg(target_os = "linux")]
 use socket2::InterfaceIndexOrAddress;
 
 use crate::network::{MulticastAddr, NetworkVersion, OSPF_IP_PROTO};
@@ -27,7 +29,9 @@ static ALL_DR_RTRS: Ipv4Addr = ip4!("224.0.0.6");
 impl NetworkVersion<Self> for Ospfv2 {
     type NetIpAddr = Ipv4Addr;
     type NetIpNetwork = Ipv4Network;
+    #[cfg(target_os = "linux")]
     type SocketAddr = SockaddrIn;
+    #[cfg(target_os = "linux")]
     type Pktinfo = libc::in_pktinfo;
 
     fn socket(ifname: Option<&str>) -> Result<Socket, std::io::Error> {
@@ -118,6 +122,7 @@ impl NetworkVersion<Self> for Ospfv2 {
         }
     }
 
+    #[cfg(target_os = "linux")]
     fn new_pktinfo(src: Ipv4Addr, ifindex: u32) -> libc::in_pktinfo {
         libc::in_pktinfo {
             ipi_ifindex: ifindex as i32,
@@ -128,10 +133,12 @@ impl NetworkVersion<Self> for Ospfv2 {
         }
     }
 
+    #[cfg(target_os = "linux")]
     fn set_cmsg_data(pktinfo: &libc::in_pktinfo) -> socket::ControlMessage<'_> {
         socket::ControlMessage::Ipv4PacketInfo(pktinfo)
     }
 
+    #[cfg(target_os = "linux")]
     fn get_cmsg_data(mut cmsgs: socket::CmsgIterator<'_>) -> Option<Ipv4Addr> {
         cmsgs.find_map(|cmsg| {
             if let socket::ControlMessageOwned::Ipv4PacketInfo(pktinfo) = cmsg {
@@ -143,10 +150,12 @@ impl NetworkVersion<Self> for Ospfv2 {
         })
     }
 
+    #[cfg(target_os = "linux")]
     fn dst_to_sockaddr(_ifindex: u32, addr: Ipv4Addr) -> SockaddrIn {
         std::net::SocketAddrV4::new(addr, 0).into()
     }
 
+    #[cfg(target_os = "linux")]
     fn src_from_sockaddr(sockaddr: &SockaddrIn) -> Ipv4Addr {
         sockaddr.ip()
     }

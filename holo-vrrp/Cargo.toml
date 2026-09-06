@@ -11,13 +11,10 @@ const-addrs.workspace = true
 enum-as-inner.workspace = true
 internet-checksum.workspace = true
 ipnetwork.workspace = true
-libc.workspace = true
-nix.workspace = true
 phf.workspace = true
 rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-socket2.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 yang5.workspace = true
@@ -26,6 +23,11 @@ holo-northbound = { path = "../holo-northbound", features = ["vrrp"] }
 holo-protocol = { path = "../holo-protocol" }
 holo-utils = { path = "../holo-utils" }
 holo-yang = { path = "../holo-yang" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc.workspace = true
+nix.workspace = true
+socket2.workspace = true
 
 [dev-dependencies]
 yang5 = { workspace = true, features = ["bundled"] }

@@ -765,7 +765,25 @@ where
                     use std::hash::Hasher;
 
                     use twox_hash::XxHash64;
-                    let mut hasher = XxHash64::with_seed(0);
+
+                    // Collection lengths reach the hasher as usize, which is
+                    // four bytes wide on a 32-bit target and eight on a
+                    // 64-bit one. Write them at a fixed width so that the
+                    // index does not depend on the target.
+                    struct FixedWidth(XxHash64);
+                    impl Hasher for FixedWidth {
+                        fn finish(&self) -> u64 {
+                            self.0.finish()
+                        }
+                        fn write(&mut self, bytes: &[u8]) {
+                            self.0.write(bytes);
+                        }
+                        fn write_usize(&mut self, i: usize) {
+                            self.0.write_u64(i as u64);
+                        }
+                    }
+
+                    let mut hasher = FixedWidth(XxHash64::with_seed(0));
                     attr.hash(&mut hasher);
                     NonZeroU64::new(hasher.finish()).unwrap_or(NonZeroU64::MIN)
                 }

@@ -516,7 +516,7 @@ pub(crate) fn policy_apply(
     }
     #[cfg(feature = "testing")]
     {
-        Task::spawn_blocking(move || {})
+        Task::spawn(async move { std::future::pending().await })
     }
 }
 

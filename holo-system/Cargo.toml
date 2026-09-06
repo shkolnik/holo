@@ -8,7 +8,6 @@ edition.workspace = true
 [dependencies]
 sysinfo = "0.38"
 
-capctl.workspace = true
 chrono.workspace = true
 derive-new.workspace = true
 futures.workspace = true
@@ -20,6 +19,9 @@ yang5.workspace = true
 holo-northbound = { path = "../holo-northbound", features = ["system"] }
 holo-utils = { path = "../holo-utils" }
 holo-yang = { path = "../holo-yang" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+capctl.workspace = true
 
 [build-dependencies]
 yang5 = { workspace = true, features = ["bundled"] }

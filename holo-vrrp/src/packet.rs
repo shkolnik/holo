@@ -19,7 +19,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::instance::Version;
 use crate::network::{
-    ICMP_PROTO_NUMBER, VRRP_MULTICAST_ADDR_IPV4, VRRP_PROTO_NUMBER,
+    ETHERTYPE_IP, ICMP_PROTO_NUMBER, VRRP_MULTICAST_ADDR_IPV4,
+    VRRP_PROTO_NUMBER,
 };
 
 // Type aliases.
@@ -433,7 +434,7 @@ impl ArpHdr {
     pub fn encode(&self) -> BytesMut {
         let mut buf = BytesMut::with_capacity(28);
         buf.put_u16(1_u16); // Hardware type = 1.
-        buf.put_u16(libc::ETH_P_IP as _); // Proto Type.
+        buf.put_u16(ETHERTYPE_IP); // Proto Type.
         buf.put_u8(6_u8); // Hardware(Mac Addr) Length = 6.
         buf.put_u8(4_u8); // Proto(Ip) length = 4.
         buf.put_u16(1_u16); // Operation = 1.
