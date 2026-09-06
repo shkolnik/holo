@@ -9,7 +9,8 @@ use std::net::Ipv4Addr;
 use const_addrs::ip4;
 use holo_utils::bytes::Bytes;
 use holo_utils::capabilities;
-use holo_utils::socket::{RawSocketExt, Socket};
+use holo_utils::ip::AddressFamily;
+use holo_utils::socket::{RawSocketExt, Socket, SocketExt};
 use ipnetwork::Ipv4Network;
 use nix::sys::socket::{self, SockaddrIn};
 use socket2::InterfaceIndexOrAddress;
@@ -55,19 +56,16 @@ impl NetworkVersion<Self> for Ospfv2 {
             socket.set_multicast_loop_v4(false)?;
             socket.set_multicast_ttl_v4(1)?;
             socket.set_ipv4_pktinfo(true)?;
-            socket.set_tos_v4(libc::IPTOS_PREC_INTERNETCONTROL.into())?;
-            // After IP_TOS, never before: the kernel resets sk_priority
-            // whenever the TOS value changes. Priorities above 6 need
-            // CAP_NET_ADMIN, which holo has dropped by now.
-            if let Some(priority) = priority {
-                capabilities::raise(|| socket.set_priority(priority))?;
-            }
+            socket.set_control_marks(
+                AddressFamily::Ipv4,
+                libc::IPTOS_PREC_INTERNETCONTROL,
+                priority,
+            )?;
 
             Ok(socket)
         }
         #[cfg(feature = "testing")]
         {
-            let _ = priority;
             Ok(Socket {})
         }
     }

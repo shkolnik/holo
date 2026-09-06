@@ -83,13 +83,36 @@ type Result<T> = std::io::Result<T>;
 
 // Extension methods for all socket types.
 pub trait SocketExt: Sized + AsRawFd {
+    // Marks this socket's egress as control-plane traffic: the IP precedence
+    // or traffic class, and optionally the 802.1p priority a VLAN
+    // sub-interface's egress-qos-map reads out of sk_priority.
+    //
+    // The order is the whole point of this method, and the reason no caller
+    // sets the two options itself: the kernel resets sk_priority
+    // (rt_tos2priority) whenever the IP_TOS value changes, so a priority set
+    // first is silently lost. Priorities above 6 require CAP_NET_ADMIN, which
+    // is dropped by the time sockets are created, hence the raise around that
+    // one call.
+    fn set_control_marks(
+        &self,
+        af: AddressFamily,
+        tos: u8,
+        priority: Option<u32>,
+    ) -> Result<()> {
+        match af {
+            AddressFamily::Ipv4 => self.set_ipv4_tos(tos)?,
+            AddressFamily::Ipv6 => self.set_ipv6_tclass(tos)?,
+        }
+        if let Some(priority) = priority {
+            crate::capabilities::raise(|| self.set_priority(priority))?;
+        }
+        Ok(())
+    }
+
     // Sets the value of the SO_PRIORITY option for this socket, which the
     // kernel maps to the 802.1p priority of the VLAN sub-interface the packet
-    // leaves through.
-    //
-    // Must be set AFTER IP_TOS: the kernel resets sk_priority (rt_tos2priority)
-    // whenever the IP_TOS value changes. Priorities above 6 require
-    // CAP_NET_ADMIN.
+    // leaves through. Control sockets go through set_control_marks instead,
+    // which owns the ordering against IP_TOS.
     fn set_priority(&self, priority: u32) -> Result<()> {
         let optval = priority as c_int;
 
@@ -718,6 +741,9 @@ mod tests {
     // which the whole workspace test run enables.
     struct TestSocket(socket2::Socket);
 
+    // Internetwork control precedence, what every holo control socket sets.
+    const CS6: u8 = libc::IPTOS_PREC_INTERNETCONTROL;
+
     impl AsRawFd for TestSocket {
         fn as_raw_fd(&self) -> RawFd {
             self.0.as_raw_fd()
@@ -738,21 +764,44 @@ mod tests {
             )
         }
 
-        // Reads SO_PRIORITY back from the kernel.
-        fn priority(&self) -> u32 {
+        fn udp6() -> Self {
+            TestSocket(
+                socket2::Socket::new(
+                    socket2::Domain::IPV6,
+                    socket2::Type::DGRAM,
+                    None,
+                )
+                .unwrap(),
+            )
+        }
+
+        // Reads an integer socket option back from the kernel.
+        fn getsockopt(&self, level: c_int, optname: c_int) -> u32 {
             let mut optval: c_int = 0;
             let mut optlen = std::mem::size_of::<c_int>() as libc::socklen_t;
             let ret = unsafe {
                 libc::getsockopt(
                     self.as_raw_fd(),
-                    libc::SOL_SOCKET,
-                    libc::SO_PRIORITY,
+                    level,
+                    optname,
                     &mut optval as *mut _ as *mut c_void,
                     &mut optlen,
                 )
             };
             assert_ne!(ret, -1, "{}", std::io::Error::last_os_error());
             optval as u32
+        }
+
+        fn priority(&self) -> u32 {
+            self.getsockopt(libc::SOL_SOCKET, libc::SO_PRIORITY)
+        }
+
+        fn tos(&self) -> u32 {
+            self.getsockopt(libc::IPPROTO_IP, libc::IP_TOS)
+        }
+
+        fn tclass(&self) -> u32 {
+            self.getsockopt(libc::IPPROTO_IPV6, libc::IPV6_TCLASS)
         }
     }
 
@@ -762,6 +811,43 @@ mod tests {
         assert_eq!(socket.priority(), 0);
         socket.set_priority(6).unwrap();
         assert_eq!(socket.priority(), 6);
+    }
+
+    // The order every control socket depends on, held down here so no call
+    // site can get it wrong: the marks survive together.
+    #[test]
+    fn control_marks_keep_the_priority_v4() {
+        let socket = TestSocket::udp();
+        socket
+            .set_control_marks(AddressFamily::Ipv4, CS6, Some(6))
+            .unwrap();
+        assert_eq!(socket.tos(), CS6 as u32);
+        assert_eq!(socket.priority(), 6);
+    }
+
+    #[test]
+    fn control_marks_keep_the_priority_v6() {
+        let socket = TestSocket::udp6();
+        socket
+            .set_control_marks(AddressFamily::Ipv6, CS6, Some(6))
+            .unwrap();
+        assert_eq!(socket.tclass(), CS6 as u32);
+        assert_eq!(socket.priority(), 6);
+    }
+
+    // No priority asked for, no setsockopt issued: an embedder that sets
+    // nothing gets the socket it had before this method existed.
+    #[test]
+    fn control_marks_without_a_priority_leave_it_untouched() {
+        let socket = TestSocket::udp();
+        socket.set_priority(3).unwrap();
+        socket
+            .set_control_marks(AddressFamily::Ipv4, CS6, None)
+            .unwrap();
+        assert_eq!(socket.tos(), CS6 as u32);
+        // 3 survives only because nothing wrote the option; IP_TOS itself
+        // resets it, so this also proves no priority was written back.
+        assert_eq!(socket.priority(), 0);
     }
 
     // The ordering the control marking rests on, asserted against the running

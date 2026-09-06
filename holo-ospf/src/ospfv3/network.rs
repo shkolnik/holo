@@ -9,7 +9,8 @@ use std::net::Ipv6Addr;
 use const_addrs::ip6;
 use holo_utils::bytes::Bytes;
 use holo_utils::capabilities;
-use holo_utils::socket::{RawSocketExt, Socket};
+use holo_utils::ip::AddressFamily;
+use holo_utils::socket::{RawSocketExt, Socket, SocketExt};
 use ipnetwork::Ipv6Network;
 use nix::sys::socket::{self, SockaddrIn6};
 
@@ -55,20 +56,16 @@ impl NetworkVersion<Self> for Ospfv3 {
             socket.set_multicast_loop_v6(false)?;
             // NOTE: IPV6_MULTICAST_HOPS is 1 by default.
             socket.set_ipv6_pktinfo(true)?;
-            socket.set_tclass_v6(libc::IPTOS_PREC_INTERNETCONTROL.into())?;
-            // After the traffic class, matching the IPv4 path: IPV6_TCLASS
-            // does not reset sk_priority, but "priority after TOS" is the one
-            // safe order everywhere. Priorities above 6 need CAP_NET_ADMIN,
-            // which holo has dropped by now.
-            if let Some(priority) = priority {
-                capabilities::raise(|| socket.set_priority(priority))?;
-            }
+            socket.set_control_marks(
+                AddressFamily::Ipv6,
+                libc::IPTOS_PREC_INTERNETCONTROL,
+                priority,
+            )?;
 
             Ok(socket)
         }
         #[cfg(feature = "testing")]
         {
-            let _ = priority;
             Ok(Socket {})
         }
     }

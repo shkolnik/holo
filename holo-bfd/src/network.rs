@@ -136,32 +136,21 @@ pub(crate) fn socket_tx(
             socket.bind_device(Some(ifname.as_bytes()))?;
         }
 
-        // Set socket options. SO_PRIORITY comes after the TOS/traffic class,
-        // never before: the kernel resets sk_priority whenever the IP_TOS
-        // value changes. Priorities above 6 need CAP_NET_ADMIN, which holo has
-        // dropped by now, hence the raise around the whole block.
-        capabilities::raise(|| -> Result<(), std::io::Error> {
-            match af {
-                AddressFamily::Ipv4 => {
-                    socket.set_ipv4_tos(libc::IPTOS_PREC_INTERNETCONTROL)?;
-                    socket.set_ipv4_ttl(ttl)?;
-                }
-                AddressFamily::Ipv6 => {
-                    socket.set_ipv6_tclass(libc::IPTOS_PREC_INTERNETCONTROL)?;
-                    socket.set_ipv6_unicast_hops(ttl)?;
-                }
-            }
-            if let Some(priority) = priority {
-                socket.set_priority(priority)?;
-            }
-            Ok(())
-        })?;
+        // Set socket options.
+        socket.set_control_marks(
+            af,
+            libc::IPTOS_PREC_INTERNETCONTROL,
+            priority,
+        )?;
+        match af {
+            AddressFamily::Ipv4 => socket.set_ipv4_ttl(ttl)?,
+            AddressFamily::Ipv6 => socket.set_ipv6_unicast_hops(ttl)?,
+        }
 
         Ok(socket)
     }
     #[cfg(feature = "testing")]
     {
-        let _ = priority;
         Ok(UdpSocket {})
     }
 }
