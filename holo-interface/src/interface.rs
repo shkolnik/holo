@@ -170,8 +170,14 @@ impl Interfaces {
             Some(iface_idx) => {
                 let iface = &mut self.arena[iface_idx];
 
+                // The netdev might be a new one reusing the name of a netdev
+                // that is gone (e.g. a re-enumerated USB NIC), in which case
+                // the ifindex needs to be rebound.
+                let ifindex_changed = iface.ifindex != Some(ifindex);
+
                 // If nothing of interest has changed, return early.
-                if iface.name == ifname
+                if !ifindex_changed
+                    && iface.name == ifname
                     && iface.mtu == Some(mtu)
                     && iface.flags == flags
                     && iface.mac_address == mac_address
@@ -184,6 +190,13 @@ impl Interfaces {
                     self.name_tree.remove(&iface.name);
                     iface.name.clone_from(&ifname);
                     self.name_tree.insert(ifname.clone(), iface_idx);
+                }
+                if ifindex_changed {
+                    if let Some(old_ifindex) = iface.ifindex {
+                        self.ifindex_tree.remove(&old_ifindex);
+                    }
+                    iface.ifindex = Some(ifindex);
+                    self.ifindex_tree.insert(ifindex, iface_idx);
                 }
                 iface.owner.insert(Owner::SYSTEM);
                 iface.mtu = Some(mtu);
@@ -199,12 +212,9 @@ impl Interfaces {
                     ibus::notify_interface_update(&sub.tx, iface);
                 }
 
-                // In case the interface exists only in the configuration,
-                // initialize its ifindex and apply any pre-existing
-                // configuration options.
-                if iface.ifindex.is_none() {
-                    iface.ifindex = Some(ifindex);
-
+                // Whenever the interface is bound to a new ifindex, apply any
+                // pre-existing configuration options to the new netdev.
+                if ifindex_changed {
                     let iface = &self.arena[iface_idx];
                     iface.apply_config(ifindex, netlink_tx, self);
                 }
@@ -267,6 +277,30 @@ impl Interfaces {
         // and not available in the kernel.
         iface.owner.remove(owner);
         if !iface.owner.is_empty() {
+            // The netdev is gone but the interface is still configured. Discard
+            // all kernel-derived state, as a netdev created later with the same
+            // name will have a different ifindex.
+            if owner == Owner::SYSTEM {
+                if let Some(ifindex) = iface.ifindex.take() {
+                    self.ifindex_tree.remove(&ifindex);
+                }
+                iface.mtu = None;
+                iface.flags = InterfaceFlags::default();
+                iface.addresses.clear();
+
+                // Notify subscribers that the interface is no longer
+                // operative.
+                for sub in self
+                    .subscriptions
+                    .values()
+                    .chain(iface.subscriptions.values())
+                {
+                    ibus::notify_interface_update(&sub.tx, iface);
+                }
+
+                // Check if the Router ID needs to be updated.
+                self.update_router_id();
+            }
             return;
         }
 
@@ -467,5 +501,190 @@ impl Interfaces {
         &mut self,
     ) -> impl Iterator<Item = &'_ mut Interface> + '_ {
         self.arena.iter_mut().map(|(_, iface)| iface)
+    }
+}
+
+// ===== tests =====
+
+#[cfg(test)]
+mod tests {
+    use holo_utils::ibus::IbusMsg;
+    use tokio::sync::mpsc::{self, UnboundedReceiver};
+
+    use super::*;
+
+    // Returns a set of interfaces holding a single configured interface, along
+    // with the receiving ends of the ibus and netlink channels.
+    fn setup(
+        ifname: &str,
+    ) -> (
+        Interfaces,
+        UnboundedReceiver<IbusMsg>,
+        UnboundedSender<NetlinkRequest>,
+        UnboundedReceiver<NetlinkRequest>,
+    ) {
+        let (ibus_tx, ibus_rx) = mpsc::unbounded_channel();
+        let (netlink_tx, netlink_rx) = mpsc::unbounded_channel();
+
+        let mut interfaces = Interfaces::default();
+        let afs = [AddressFamily::Ipv4, AddressFamily::Ipv6]
+            .into_iter()
+            .collect();
+        interfaces
+            .subscriptions
+            .insert(0, InterfaceSub::new(afs, ibus_tx));
+        interfaces.add(ifname.to_owned());
+
+        (interfaces, ibus_rx, netlink_tx, netlink_rx)
+    }
+
+    fn flags_up() -> InterfaceFlags {
+        InterfaceFlags::OPERATIVE | InterfaceFlags::BROADCAST
+    }
+
+    // Returns the ifindex carried by the last interface update notification.
+    fn last_upd_ifindex(
+        ibus_rx: &mut UnboundedReceiver<IbusMsg>,
+    ) -> Option<u32> {
+        let mut ifindex = None;
+        while let Ok(msg) = ibus_rx.try_recv() {
+            if let IbusMsg::InterfaceUpd(msg) = msg {
+                ifindex = Some(msg.ifindex);
+            }
+        }
+        ifindex
+    }
+
+    #[test]
+    fn netdev_removal_clears_kernel_state() {
+        let (mut interfaces, mut ibus_rx, netlink_tx, _netlink_rx) =
+            setup("eth0");
+
+        interfaces.update(
+            "eth0".to_owned(),
+            10,
+            1500,
+            flags_up(),
+            MacAddr::default(),
+            &netlink_tx,
+        );
+        assert_eq!(interfaces.get_by_name("eth0").unwrap().ifindex, Some(10));
+        assert!(interfaces.get_by_ifindex(10).is_some());
+        assert_eq!(last_upd_ifindex(&mut ibus_rx), Some(10));
+
+        interfaces.remove("eth0", Owner::SYSTEM, &netlink_tx);
+
+        // The interface survives since it's still configured, but all
+        // kernel-derived state is gone.
+        let iface = interfaces.get_by_name("eth0").unwrap();
+        assert_eq!(iface.owner, Owner::CONFIG);
+        assert_eq!(iface.ifindex, None);
+        assert_eq!(iface.mtu, None);
+        assert_eq!(iface.flags, InterfaceFlags::default());
+        assert!(iface.addresses.is_empty());
+        assert!(interfaces.get_by_ifindex(10).is_none());
+
+        // Subscribers are told the interface is no longer operative.
+        assert_eq!(last_upd_ifindex(&mut ibus_rx), Some(0));
+    }
+
+    #[test]
+    fn netdev_recreated_with_new_ifindex() {
+        let (mut interfaces, mut ibus_rx, netlink_tx, _netlink_rx) =
+            setup("eth0");
+
+        interfaces.update(
+            "eth0".to_owned(),
+            10,
+            1500,
+            flags_up(),
+            MacAddr::default(),
+            &netlink_tx,
+        );
+        interfaces.remove("eth0", Owner::SYSTEM, &netlink_tx);
+        let _ = last_upd_ifindex(&mut ibus_rx);
+
+        interfaces.update(
+            "eth0".to_owned(),
+            11,
+            1500,
+            flags_up(),
+            MacAddr::default(),
+            &netlink_tx,
+        );
+
+        let iface = interfaces.get_by_name("eth0").unwrap();
+        assert_eq!(iface.ifindex, Some(11));
+        assert_eq!(iface.owner, Owner::CONFIG | Owner::SYSTEM);
+        assert_eq!(
+            interfaces.get_by_ifindex(11).map(|iface| &iface.name),
+            Some(&"eth0".to_owned())
+        );
+        assert!(interfaces.get_by_ifindex(10).is_none());
+
+        // The notification carries the new ifindex.
+        assert_eq!(last_upd_ifindex(&mut ibus_rx), Some(11));
+    }
+
+    #[test]
+    fn ifindex_change_without_removal_rebinds() {
+        let (mut interfaces, mut ibus_rx, netlink_tx, _netlink_rx) =
+            setup("eth0");
+
+        interfaces.update(
+            "eth0".to_owned(),
+            10,
+            1500,
+            flags_up(),
+            MacAddr::default(),
+            &netlink_tx,
+        );
+        let _ = last_upd_ifindex(&mut ibus_rx);
+
+        interfaces.update(
+            "eth0".to_owned(),
+            11,
+            1500,
+            flags_up(),
+            MacAddr::default(),
+            &netlink_tx,
+        );
+
+        assert_eq!(interfaces.get_by_name("eth0").unwrap().ifindex, Some(11));
+        assert_eq!(
+            interfaces.get_by_ifindex(11).map(|iface| &iface.name),
+            Some(&"eth0".to_owned())
+        );
+        assert!(interfaces.get_by_ifindex(10).is_none());
+        assert_eq!(last_upd_ifindex(&mut ibus_rx), Some(11));
+    }
+
+    #[test]
+    fn address_installed_on_new_ifindex() {
+        let (mut interfaces, _ibus_rx, netlink_tx, _netlink_rx) = setup("eth0");
+
+        interfaces.update(
+            "eth0".to_owned(),
+            10,
+            1500,
+            flags_up(),
+            MacAddr::default(),
+            &netlink_tx,
+        );
+        interfaces.remove("eth0", Owner::SYSTEM, &netlink_tx);
+        interfaces.update(
+            "eth0".to_owned(),
+            11,
+            1500,
+            flags_up(),
+            MacAddr::default(),
+            &netlink_tx,
+        );
+
+        let addr: IpNetwork = "10.0.0.1/24".parse().unwrap();
+        interfaces.addr_add(11, addr);
+
+        let iface = interfaces.get_by_name("eth0").unwrap();
+        assert!(iface.addresses.contains_key(&addr));
     }
 }
