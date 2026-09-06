@@ -11,7 +11,7 @@ use derive_new::new;
 use holo_utils::bier::{BierEncapId, BiftId, Bsl};
 use holo_utils::bytes::{Bytes, BytesMut};
 use holo_utils::mpls::Label;
-use holo_utils::sr::{IgpAlgoType, Sid};
+use holo_utils::sr::{PrefixSidAlgo, Sid};
 use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
@@ -126,7 +126,7 @@ pub struct NodeAdminTagTlv {
 //
 #[derive(Clone, Debug, Default, Eq, new, PartialEq)]
 #[derive(Deserialize, Serialize)]
-pub struct SrAlgoTlv(BTreeSet<IgpAlgoType>);
+pub struct SrAlgoTlv(BTreeSet<PrefixSidAlgo>);
 
 //
 // SID/Label Range TLV.
@@ -592,7 +592,7 @@ impl SrAlgoTlv {
         let mut list = BTreeSet::new();
         for _ in 0..tlv_len {
             let algo = buf.try_get_u8()?;
-            let Some(algo) = IgpAlgoType::from_u8(algo) else {
+            let Some(algo) = PrefixSidAlgo::from_u8(algo) else {
                 // Unsupported algorithm - ignore.
                 continue;
             };
@@ -610,7 +610,7 @@ impl SrAlgoTlv {
         tlv_encode_end(buf, start_pos);
     }
 
-    pub(crate) fn get(&self) -> &BTreeSet<IgpAlgoType> {
+    pub(crate) fn get(&self) -> &BTreeSet<PrefixSidAlgo> {
         &self.0
     }
 }

@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use chrono::Utc;
 use derive_new::new;
 use holo_utils::ip::AddressFamily;
-use holo_utils::sr::IgpAlgoType;
+use holo_utils::sr::PrefixSidAlgo;
 use tracing::debug_span;
 
 use crate::area::Area;
@@ -73,7 +73,7 @@ pub struct SpfIntraAreaNetwork<'a, V: Version> {
     pub prefix: V::IpNetwork,
     pub prefix_options: V::PrefixOptions,
     pub metric: u16,
-    pub prefix_sids: BTreeMap<IgpAlgoType, V::PrefixSid>,
+    pub prefix_sids: BTreeMap<PrefixSidAlgo, V::PrefixSid>,
     pub bier: Vec<BierStlv>,
 }
 
@@ -83,7 +83,7 @@ pub struct SpfInterAreaNetwork<V: Version> {
     pub prefix: V::IpNetwork,
     pub prefix_options: V::PrefixOptions,
     pub metric: u32,
-    pub prefix_sids: BTreeMap<IgpAlgoType, V::PrefixSid>,
+    pub prefix_sids: BTreeMap<PrefixSidAlgo, V::PrefixSid>,
 }
 
 #[derive(Debug)]

@@ -212,18 +212,6 @@ pub enum IgpMetricType {
     TeDefaultMetric = 2,
 }
 
-// IGP Algorithm Types.
-//
-// IANA registry:
-// https://www.iana.org/assignments/igp-parameters/igp-parameters.xhtml#igp-algorithm-types
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[derive(FromPrimitive)]
-#[derive(Deserialize, Serialize)]
-pub enum IgpAlgoType {
-    Spf = 0,
-    StrictSpf = 1,
-}
-
 // IGP Flexible Algorithm Definition Flags.
 //
 // IANA registry:

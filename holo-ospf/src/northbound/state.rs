@@ -14,7 +14,7 @@ use holo_utils::ip::IpAddrKind;
 use holo_utils::num::SaturatingInto;
 use holo_utils::option::OptionExt;
 use holo_utils::protocol::Protocol;
-use holo_utils::sr::IgpAlgoType;
+use holo_utils::sr::PrefixSidAlgo;
 use holo_yang::types::{HexStr, TimerValueMillis, TimerValueSecs16, Timeticks};
 use holo_yang::{ToYang, ToYangFlags};
 use num_traits::FromPrimitive;
@@ -56,7 +56,7 @@ pub enum Ospfv3RouterLinkSubTlv<'a> {
 // ListEntry for OSPFv3 extended prefix sub-TLV lists.
 #[derive(Debug)]
 pub enum Ospfv3PrefixSubTlv<'a> {
-    PrefixSids(&'a BTreeMap<IgpAlgoType, ospfv3::packet::lsa::PrefixSid>),
+    PrefixSids(&'a BTreeMap<PrefixSidAlgo, ospfv3::packet::lsa::PrefixSid>),
     Biers(&'a Vec<BierStlv>),
     Unknown(&'a UnknownTlv),
 }

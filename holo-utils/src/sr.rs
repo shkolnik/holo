@@ -17,14 +17,28 @@ use serde::{Deserialize, Serialize};
 use crate::ip::AddressFamily;
 use crate::mpls::{Label, LabelRange};
 
-// IGP Algorithm Types.
+// IGP algorithms modeled by the YANG identity
+// "ietf-segment-routing-common:prefix-sid-algorithm".
 //
 // IANA registry:
 // https://www.iana.org/assignments/igp-parameters/igp-parameters.xhtml#igp-algorithm-types
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[derive(FromPrimitive, ToPrimitive)]
 #[derive(Deserialize, Serialize)]
-pub enum IgpAlgoType {
+pub enum PrefixSidAlgo {
+    Spf = 0,
+    StrictSpf = 1,
+}
+
+// IGP algorithms modeled by the YANG typedef
+// "iana-igp-algo-types:algo-type".
+//
+// IANA registry:
+// https://www.iana.org/assignments/igp-parameters/igp-parameters.xhtml#igp-algorithm-types
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(FromPrimitive)]
+#[derive(Deserialize, Serialize)]
+pub enum IgpAlgo {
     Spf = 0,
     StrictSpf = 1,
 }
@@ -61,7 +75,7 @@ pub enum SidLastHopBehavior {
 #[derive(Deserialize, Serialize)]
 pub struct SrCfg {
     #[serde(with = "vectorize")]
-    pub prefix_sids: HashMap<(IpNetwork, IgpAlgoType), SrCfgPrefixSid>,
+    pub prefix_sids: HashMap<(IpNetwork, PrefixSidAlgo), SrCfgPrefixSid>,
     pub srgb: BTreeSet<LabelRange>,
     pub srlb: BTreeSet<LabelRange>,
 }
@@ -81,16 +95,16 @@ pub enum SrCfgEvent {
     PrefixSidUpdate(AddressFamily),
 }
 
-// ===== impl IgpAlgoType =====
+// ===== impl PrefixSidAlgo =====
 
-impl ToYang for IgpAlgoType {
+impl ToYang for PrefixSidAlgo {
     fn to_yang(&self) -> Cow<'static, str> {
         match self {
-            IgpAlgoType::Spf => {
+            PrefixSidAlgo::Spf => {
                 "ietf-segment-routing-common:prefix-sid-algorithm-shortest-path"
                     .into()
             }
-            IgpAlgoType::StrictSpf => {
+            PrefixSidAlgo::StrictSpf => {
                 "ietf-segment-routing-common:prefix-sid-algorithm-strict-spf"
                     .into()
             }
@@ -98,16 +112,27 @@ impl ToYang for IgpAlgoType {
     }
 }
 
-impl TryFromYang for IgpAlgoType {
-    fn try_from_yang(value: &str) -> Option<IgpAlgoType> {
+impl TryFromYang for PrefixSidAlgo {
+    fn try_from_yang(value: &str) -> Option<PrefixSidAlgo> {
         match value {
             "ietf-segment-routing-common:prefix-sid-algorithm-shortest-path" => {
-                Some(IgpAlgoType::Spf)
+                Some(PrefixSidAlgo::Spf)
             }
             "ietf-segment-routing-common:prefix-sid-algorithm-strict-spf" => {
-                Some(IgpAlgoType::StrictSpf)
+                Some(PrefixSidAlgo::StrictSpf)
             }
             _ => None,
+        }
+    }
+}
+
+// ===== impl IgpAlgo =====
+
+impl ToYang for IgpAlgo {
+    fn to_yang(&self) -> Cow<'static, str> {
+        match self {
+            IgpAlgo::Spf => "algo-spf".into(),
+            IgpAlgo::StrictSpf => "algo-strict-spf".into(),
         }
     }
 }

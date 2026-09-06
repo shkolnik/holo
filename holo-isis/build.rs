@@ -76,7 +76,7 @@ static TYPEDEFS: &[(&str, TypeSpec)] = &[
     (
         "algo-type",
         TypeSpec {
-            rust_type: "IgpAlgoType",
+            rust_type: "holo_utils::sr::IgpAlgo",
             copy_semantics: true,
         },
     ),
@@ -129,7 +129,7 @@ static IDENTITY_TYPES: &[(&str, TypeSpec)] = &[
     (
         "prefix-sid-algorithm",
         TypeSpec {
-            rust_type: "holo_utils::sr::IgpAlgoType",
+            rust_type: "holo_utils::sr::PrefixSidAlgo",
             copy_semantics: true,
         },
     ),

@@ -14,7 +14,7 @@ use derive_new::new;
 use holo_utils::bier::{BierEncapId, BiftId};
 use holo_utils::bytes::{Bytes, BytesMut};
 use holo_utils::mpls::Label;
-use holo_utils::sr::{IgpAlgoType, Sid};
+use holo_utils::sr::{PrefixSidAlgo, Sid};
 use num_traits::FromPrimitive;
 use serde::{Deserialize, Serialize};
 
@@ -67,7 +67,7 @@ bitflags! {
 #[derive(Deserialize, Serialize)]
 pub struct PrefixSidStlv {
     pub flags: PrefixSidFlags,
-    pub algo: IgpAlgoType,
+    pub algo: PrefixSidAlgo,
     pub sid: Sid,
 }
 
@@ -227,7 +227,7 @@ impl PrefixSidStlv {
         let flags = buf.try_get_u8()?;
         let flags = PrefixSidFlags::from_bits_truncate(flags);
         let algo = buf.try_get_u8()?;
-        let Some(algo) = IgpAlgoType::from_u8(algo) else {
+        let Some(algo) = PrefixSidAlgo::from_u8(algo) else {
             // Unsupported algorithm - ignore.
             return Ok(None);
         };

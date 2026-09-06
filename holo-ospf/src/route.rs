@@ -14,7 +14,7 @@ use holo_utils::bier::BierInfo;
 use holo_utils::ip::IpAddrKind;
 use holo_utils::mpls::Label;
 use holo_utils::southbound::OspfRouteType;
-use holo_utils::sr::IgpAlgoType;
+use holo_utils::sr::PrefixSidAlgo;
 
 use crate::area::{Area, BACKBONE_AREA_ID};
 use crate::collections::{Areas, Arena, InterfaceIndex};
@@ -421,7 +421,7 @@ fn update_rib_intra_area<V>(
 
         // Update route's Prefix-SID (if any).
         if instance.config.sr_enabled
-            && let Some(prefix_sid) = stub.prefix_sids.get(&IgpAlgoType::Spf)
+            && let Some(prefix_sid) = stub.prefix_sids.get(&PrefixSidAlgo::Spf)
         {
             let local = stub.vertex.hops == 0;
             let last_hop = stub.vertex.hops == 1;
@@ -513,7 +513,7 @@ fn update_rib_inter_area_networks<V>(
 
         // Update route's Prefix-SID (if any).
         if instance.config.sr_enabled
-            && let Some(prefix_sid) = lsa.prefix_sids.get(&IgpAlgoType::Spf)
+            && let Some(prefix_sid) = lsa.prefix_sids.get(&PrefixSidAlgo::Spf)
         {
             sr::prefix_sid_update(
                 area,
@@ -602,7 +602,7 @@ fn update_rib_transit_area<V>(
 
         // Update route's Prefix-SID (if any).
         if instance.config.sr_enabled
-            && let Some(prefix_sid) = lsa.prefix_sids.get(&IgpAlgoType::Spf)
+            && let Some(prefix_sid) = lsa.prefix_sids.get(&PrefixSidAlgo::Spf)
         {
             sr::prefix_sid_update(
                 area,

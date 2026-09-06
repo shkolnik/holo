@@ -17,7 +17,7 @@ use holo_utils::ip::{AddressFamily, IpNetworkKind};
 use holo_utils::mpls::LabelRange;
 use holo_utils::protocol::Protocol;
 use holo_utils::southbound::{Nexthop, RouteKeyMsg, RouteKind, RouteMsg, RouteOpaqueAttrs};
-use holo_utils::sr::{IgpAlgoType, SidLastHopBehavior, SrCfgEvent, SrCfgPrefixSid};
+use holo_utils::sr::{PrefixSidAlgo, SidLastHopBehavior, SrCfgEvent, SrCfgPrefixSid};
 use holo_utils::yang::{DataNodeRefExt, DataTreeExt};
 use holo_yang::TryFromYang;
 use ipnetwork::IpNetwork;
@@ -568,7 +568,7 @@ fn apply_bier_bfr_nbr(birt: &mut BierBift, bfr_nbr: IpAddr, change: BierBiftBirt
     Ok(())
 }
 
-fn apply_connected_prefix_sid(master: &mut Master, prefix: IpNetwork, algo: IgpAlgoType, change: SegmentRoutingSrMplsBindingsConnectedPrefixSidMapConnectedPrefixSidChange, event_queue: &mut BTreeSet<Event>) -> Result<(), ApplyError> {
+fn apply_connected_prefix_sid(master: &mut Master, prefix: IpNetwork, algo: PrefixSidAlgo, change: SegmentRoutingSrMplsBindingsConnectedPrefixSidMapConnectedPrefixSidChange, event_queue: &mut BTreeSet<Event>) -> Result<(), ApplyError> {
     match change {
         SegmentRoutingSrMplsBindingsConnectedPrefixSidMapConnectedPrefixSidChange::Create => {
             // The mandatory start-sid leaf is applied as a separate change

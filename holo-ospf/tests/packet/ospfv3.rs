@@ -27,7 +27,7 @@ use holo_utils::crypto::CryptoAlgo;
 use holo_utils::ip::AddressFamily;
 use holo_utils::keychain::Key;
 use holo_utils::mpls::Label;
-use holo_utils::sr::{IgpAlgoType, Sid};
+use holo_utils::sr::{PrefixSidAlgo, Sid};
 use maplit::{btreemap, btreeset};
 
 const SRC_ADDR: Ipv6Addr = Ipv6Addr::UNSPECIFIED;
@@ -983,7 +983,7 @@ static LSA3: Lazy<(Vec<u8>, Lsa<Ospfv3>)> = Lazy::new(|| {
                         .into(),
                 ),
                 func_caps: None,
-                sr_algo: Some(SrAlgoTlv::new(btreeset!(IgpAlgoType::Spf))),
+                sr_algo: Some(SrAlgoTlv::new(btreeset!(PrefixSidAlgo::Spf))),
                 srgb: vec![SidLabelRangeTlv::new(
                     Sid::Label(Label::new(16000)),
                     8000,
@@ -1223,10 +1223,10 @@ static EXT_INTRA_AREA_PREFIX_LSA1: Lazy<(Vec<u8>, Lsa<Ospfv3>)> =
                         value: net!("2.2.2.2/32"),
                         metric: 0,
                         prefix_sids: btreemap! {
-                            IgpAlgoType::Spf => {
+                            PrefixSidAlgo::Spf => {
                                 PrefixSid {
                                     flags: PrefixSidFlags::empty(),
-                                    algo: IgpAlgoType::Spf,
+                                    algo: PrefixSidAlgo::Spf,
                                     sid: Sid::Index(20),
                                 }
                             }

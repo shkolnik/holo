@@ -7,7 +7,7 @@
 use std::net::Ipv4Addr;
 
 use holo_utils::mpls::Label;
-use holo_utils::sr::{IgpAlgoType, Sid};
+use holo_utils::sr::{PrefixSidAlgo, Sid};
 
 use crate::area::Area;
 use crate::collections::Arena;
@@ -44,7 +44,7 @@ pub(crate) fn prefix_sid_update<V>(
     let ri = V::area_router_information(&area.state.lsdb, adv_rtr, lsa_entries);
     if !ri
         .sr_algo
-        .is_some_and(|sr_algo| sr_algo.get().contains(&IgpAlgoType::Spf))
+        .is_some_and(|sr_algo| sr_algo.get().contains(&PrefixSidAlgo::Spf))
     {
         return;
     }

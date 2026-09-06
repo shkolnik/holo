@@ -27,7 +27,7 @@ use holo_utils::crypto::CryptoAlgo;
 use holo_utils::ip::AddressFamily;
 use holo_utils::keychain::Key;
 use holo_utils::mpls::Label;
-use holo_utils::sr::{IgpAlgoType, Sid};
+use holo_utils::sr::{PrefixSidAlgo, Sid};
 use maplit::{btreemap, btreeset};
 
 const SRC_ADDR: Ipv4Addr = Ipv4Addr::UNSPECIFIED;
@@ -907,7 +907,7 @@ static LSA2: Lazy<(Vec<u8>, Lsa<Ospfv2>)> = Lazy::new(|| {
             LsaBody::OpaqueArea(LsaOpaque::RouterInfo(LsaRouterInfo {
                 info_caps: Some(RouterInfoCaps::TE.into()),
                 func_caps: None,
-                sr_algo: Some(SrAlgoTlv::new(btreeset!(IgpAlgoType::Spf))),
+                sr_algo: Some(SrAlgoTlv::new(btreeset!(PrefixSidAlgo::Spf))),
                 srgb: vec![SidLabelRangeTlv::new(
                     Sid::Label(Label::new(16000)),
                     8000,
@@ -952,10 +952,10 @@ static LSA3: Lazy<(Vec<u8>, Lsa<Ospfv2>)> = Lazy::new(|| {
                             flags: LsaExtPrefixFlags::N,
                             prefix: net4!("1.1.1.1/32"),
                             prefix_sids: btreemap! {
-                                IgpAlgoType::Spf => {
+                                PrefixSidAlgo::Spf => {
                                     PrefixSid {
                                         flags: PrefixSidFlags::empty(),
-                                        algo: IgpAlgoType::Spf,
+                                        algo: PrefixSidAlgo::Spf,
                                         sid: Sid::Index(10),
                                     }
                                 }

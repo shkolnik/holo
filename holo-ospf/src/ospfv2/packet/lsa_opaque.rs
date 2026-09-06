@@ -11,7 +11,7 @@ use derive_new::new;
 use enum_as_inner::EnumAsInner;
 use holo_utils::bytes::{Bytes, BytesMut};
 use holo_utils::mpls::Label;
-use holo_utils::sr::{IgpAlgoType, Sid};
+use holo_utils::sr::{PrefixSidAlgo, Sid};
 use ipnetwork::Ipv4Network;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -169,7 +169,7 @@ pub struct ExtPrefixTlv {
     pub flags: LsaExtPrefixFlags,
     pub prefix: Ipv4Network,
     #[new(default)]
-    pub prefix_sids: BTreeMap<IgpAlgoType, PrefixSid>,
+    pub prefix_sids: BTreeMap<PrefixSidAlgo, PrefixSid>,
     #[new(default)]
     pub unknown_tlvs: Vec<UnknownTlv>,
 }
@@ -207,7 +207,7 @@ pub enum ExtPrefixRouteType {
 #[derive(Deserialize, Serialize)]
 pub struct PrefixSid {
     pub flags: PrefixSidFlags,
-    pub algo: IgpAlgoType,
+    pub algo: PrefixSidAlgo,
     pub sid: Sid,
 }
 
@@ -685,7 +685,7 @@ impl ExtPrefixTlv {
                         continue;
                     }
                     let algo = buf_stlv.try_get_u8()?;
-                    let Some(algo) = IgpAlgoType::from_u8(algo) else {
+                    let Some(algo) = PrefixSidAlgo::from_u8(algo) else {
                         // Unsupported algorithm - ignore.
                         continue;
                     };

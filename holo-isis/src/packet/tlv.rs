@@ -20,7 +20,7 @@ use holo_utils::ip::{
     AddressFamily, Ipv4AddrExt, Ipv4NetworkExt, Ipv6AddrExt, Ipv6NetworkExt,
 };
 use holo_utils::mac_addr::MacAddr;
-use holo_utils::sr::IgpAlgoType;
+use holo_utils::sr::PrefixSidAlgo;
 use ipnetwork::{IpNetwork, Ipv4Network, Ipv6Network};
 use num_derive::FromPrimitive;
 use num_traits::{FromPrimitive, ToPrimitive};
@@ -365,7 +365,7 @@ pub struct Ipv4ReachStlvs {
     pub prefix_attr_flags: Option<PrefixAttrFlagsStlv>,
     pub ipv4_source_rid: Option<Ipv4SourceRidStlv>,
     pub ipv6_source_rid: Option<Ipv6SourceRidStlv>,
-    pub prefix_sids: BTreeMap<IgpAlgoType, PrefixSidStlv>,
+    pub prefix_sids: BTreeMap<PrefixSidAlgo, PrefixSidStlv>,
     pub fapm: BTreeMap<u8, FapmStlv>,
     pub unknown: Vec<UnknownTlv>,
 }
@@ -401,7 +401,7 @@ pub struct Ipv6ReachStlvs {
     pub prefix_attr_flags: Option<PrefixAttrFlagsStlv>,
     pub ipv4_source_rid: Option<Ipv4SourceRidStlv>,
     pub ipv6_source_rid: Option<Ipv6SourceRidStlv>,
-    pub prefix_sids: BTreeMap<IgpAlgoType, PrefixSidStlv>,
+    pub prefix_sids: BTreeMap<PrefixSidAlgo, PrefixSidStlv>,
     pub fapm: BTreeMap<u8, FapmStlv>,
     pub bier: Vec<BierInfoStlv>,
     pub unknown: Vec<UnknownTlv>,

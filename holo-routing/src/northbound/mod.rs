@@ -24,7 +24,7 @@ pub mod yang_gen {
     use holo_utils::mpls::Label;
     use holo_utils::protocol::Protocol;
     use holo_utils::southbound::{IsisRouteType, OspfRouteType};
-    use holo_utils::sr::{IgpAlgoType, SidLastHopBehavior};
+    use holo_utils::sr::{PrefixSidAlgo, SidLastHopBehavior};
     pub use routing::control_plane_protocols::control_plane_protocol;
 
     use crate::northbound::configuration::NexthopSpecial;

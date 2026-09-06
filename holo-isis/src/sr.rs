@@ -11,7 +11,7 @@ use std::net::IpAddr;
 
 use holo_utils::ip::AddressFamily;
 use holo_utils::mpls::Label;
-use holo_utils::sr::{IgpAlgoType, Sid};
+use holo_utils::sr::{PrefixSidAlgo, Sid};
 
 use crate::adjacency::{Adjacency, AdjacencySid};
 use crate::collections::Arena;
@@ -55,7 +55,7 @@ pub(crate) fn prefix_sid_update(
         .filter(|lsp| lsp.rem_lifetime != 0)
         .filter(|lsp| lsp.seqno != 0)
         .filter_map(|lsp| lsp.tlvs.sr_algos())
-        .any(|sr_algos| sr_algos.get().contains(&IgpAlgoType::Spf))
+        .any(|sr_algos| sr_algos.get().contains(&PrefixSidAlgo::Spf))
     {
         return;
     }

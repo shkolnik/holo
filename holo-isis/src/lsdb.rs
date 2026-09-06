@@ -22,7 +22,7 @@ use holo_utils::ip::{
     AddressFamily, Ipv4NetworkExt, Ipv6NetworkExt, JointPrefixMapExt,
 };
 use holo_utils::mpls::Label;
-use holo_utils::sr::{IgpAlgoType, Sid, SidLastHopBehavior, SrCfgPrefixSid};
+use holo_utils::sr::{PrefixSidAlgo, Sid, SidLastHopBehavior, SrCfgPrefixSid};
 use holo_utils::task::TimeoutTask;
 use ipnetwork::{IpNetwork, Ipv4Network, Ipv6Network};
 use itertools::Itertools;
@@ -481,7 +481,8 @@ fn lsp_build_tlvs_router_cap(
         cap.sub_tlvs.sr_cap = Some(SrCapabilitiesStlv::new(sr_cap_flags, srgb));
 
         // Add SR-Algorithm Sub-TLV.
-        cap.sub_tlvs.sr_algo = Some(SrAlgoStlv::new([IgpAlgoType::Spf].into()));
+        cap.sub_tlvs.sr_algo =
+            Some(SrAlgoStlv::new([PrefixSidAlgo::Spf].into()));
 
         // Add SR Local Block Sub-TLV.
         let mut srlb = vec![];
@@ -1023,7 +1024,7 @@ fn lsp_build_ipv4_reach_stlvs(
 
     // Add Prefix-SID Sub-TLV(s).
     if add_prefix_sid && instance.config.sr.enabled {
-        let algo = IgpAlgoType::Spf;
+        let algo = PrefixSidAlgo::Spf;
         if let Some(prefix_sid_cfg) = instance
             .shared
             .sr_config
@@ -1063,7 +1064,7 @@ fn lsp_build_ipv6_reach_stlvs(
 
     // Add Prefix-SID Sub-TLV(s).
     if add_prefix_sid && instance.config.sr.enabled {
-        let algo = IgpAlgoType::Spf;
+        let algo = PrefixSidAlgo::Spf;
         if let Some(prefix_sid_cfg) = instance
             .shared
             .sr_config
@@ -1138,7 +1139,7 @@ fn lsp_build_prefix_sid_stlv(prefix_sid_cfg: &SrCfgPrefixSid) -> PrefixSidStlv {
         }
         SidLastHopBehavior::Php => (),
     }
-    let algo = IgpAlgoType::Spf;
+    let algo = PrefixSidAlgo::Spf;
     let sid = Sid::Index(prefix_sid_cfg.index);
     PrefixSidStlv::new(flags, algo, sid)
 }

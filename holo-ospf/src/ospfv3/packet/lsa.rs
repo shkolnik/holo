@@ -13,7 +13,7 @@ use enum_as_inner::EnumAsInner;
 use holo_utils::bytes::{Bytes, BytesMut};
 use holo_utils::ip::{AddressFamily, IpAddrExt, Ipv4AddrExt, Ipv6AddrExt};
 use holo_utils::mpls::Label;
-use holo_utils::sr::{IgpAlgoType, Sid};
+use holo_utils::sr::{PrefixSidAlgo, Sid};
 use ipnetwork::IpNetwork;
 use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::FromPrimitive;
@@ -163,7 +163,7 @@ pub struct ExtLsaStlvs {
     pub ipv6_fwd_addr: Option<Ipv6Addr>,
     pub ipv4_fwd_addr: Option<Ipv4Addr>,
     pub route_tag: Option<u32>,
-    pub prefix_sids: BTreeMap<IgpAlgoType, PrefixSid>,
+    pub prefix_sids: BTreeMap<PrefixSidAlgo, PrefixSid>,
     pub adj_sids: Vec<AdjSid>,
     pub bier: Vec<BierStlv>,
     pub unknown: Vec<UnknownTlv>,
@@ -188,7 +188,7 @@ pub struct ExtLsaStlvs {
 #[derive(Deserialize, Serialize)]
 pub struct PrefixSid {
     pub flags: PrefixSidFlags,
-    pub algo: IgpAlgoType,
+    pub algo: PrefixSidAlgo,
     pub sid: Sid,
 }
 
@@ -430,7 +430,7 @@ pub struct LsaInterAreaPrefix {
     pub metric: u32,
     pub prefix_options: PrefixOptions,
     pub prefix: IpNetwork,
-    pub prefix_sids: BTreeMap<IgpAlgoType, PrefixSid>,
+    pub prefix_sids: BTreeMap<PrefixSidAlgo, PrefixSid>,
     #[new(default)]
     pub unknown_tlvs: Vec<UnknownTlv>,
     #[new(default)]
@@ -571,7 +571,7 @@ pub struct LsaAsExternal {
     pub ref_lsa_type: Option<LsaType>,
     pub ref_lsa_id: Option<Ipv4Addr>,
     #[new(default)]
-    pub prefix_sids: BTreeMap<IgpAlgoType, PrefixSid>,
+    pub prefix_sids: BTreeMap<PrefixSidAlgo, PrefixSid>,
     #[new(default)]
     pub unknown_tlvs: Vec<UnknownTlv>,
     #[new(default)]
@@ -780,7 +780,7 @@ pub struct LsaIntraAreaPrefixEntry {
     pub value: IpNetwork,
     pub metric: u16,
     #[new(default)]
-    pub prefix_sids: BTreeMap<IgpAlgoType, PrefixSid>,
+    pub prefix_sids: BTreeMap<PrefixSidAlgo, PrefixSid>,
     #[new(default)]
     pub bier: Vec<BierStlv>,
     #[new(default)]
@@ -2606,7 +2606,7 @@ impl ExtLsaStlvs {
                     let flags = buf_stlv.try_get_u8()?;
                     let flags = PrefixSidFlags::from_bits_truncate(flags);
                     let algo = buf_stlv.try_get_u8()?;
-                    let Some(algo) = IgpAlgoType::from_u8(algo) else {
+                    let Some(algo) = PrefixSidAlgo::from_u8(algo) else {
                         // Unsupported algorithm - ignore.
                         continue;
                     };

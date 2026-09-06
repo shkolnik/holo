@@ -44,7 +44,7 @@ use holo_isis::packet::tlv::{
 use holo_isis::packet::{AreaAddr, LanId, LevelNumber, LspId, SystemId};
 use holo_utils::keychain::Key;
 use holo_utils::mpls::Label;
-use holo_utils::sr::{IgpAlgoType, Sid};
+use holo_utils::sr::{PrefixSidAlgo, Sid};
 use maplit::btreemap;
 
 use super::{KEY_HMAC_MD5, KEY_HMAC_SHA256, test_decode_pdu, test_encode_pdu};
@@ -125,7 +125,7 @@ static LSP1: Lazy<(Vec<u8>, Option<&Key>, Pdu)> = Lazy::new(|| {
                             )],
                         )),
                         sr_algo: Some(SrAlgoStlv::new(
-                            [IgpAlgoType::Spf].into(),
+                            [PrefixSidAlgo::Spf].into(),
                         )),
                         srlb: Some(SrLocalBlockStlv::new(vec![
                             LabelBlockEntry::new(
@@ -287,10 +287,10 @@ static LSP1: Lazy<(Vec<u8>, Option<&Key>, Pdu)> = Lazy::new(|| {
                                     ip6!("2001:db8::1"),
                                 )),
                                 prefix_sids: btreemap! {
-                                    IgpAlgoType::Spf => {
+                                    PrefixSidAlgo::Spf => {
                                         PrefixSidStlv {
                                             flags: PrefixSidFlags::N,
-                                            algo: IgpAlgoType::Spf,
+                                            algo: PrefixSidAlgo::Spf,
                                             sid: Sid::Index(10),
                                         }
                                     }
@@ -333,10 +333,10 @@ static LSP1: Lazy<(Vec<u8>, Option<&Key>, Pdu)> = Lazy::new(|| {
                                     ip6!("2001:db8::1"),
                                 )),
                                 prefix_sids: btreemap! {
-                                    IgpAlgoType::Spf => {
+                                    PrefixSidAlgo::Spf => {
                                         PrefixSidStlv {
                                             flags: PrefixSidFlags::N,
-                                            algo: IgpAlgoType::Spf,
+                                            algo: PrefixSidAlgo::Spf,
                                             sid: Sid::Index(11),
                                         }
                                     }

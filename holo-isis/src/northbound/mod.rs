@@ -20,13 +20,14 @@ pub mod yang_gen {
     use holo_utils::crypto::CryptoAlgo;
     use holo_utils::ip::AddressFamily;
     use holo_utils::protocol::Protocol;
+    use holo_utils::sr::IgpAlgo;
     pub use routing::control_plane_protocols::control_plane_protocol::isis;
 
     use crate::adjacency::AdjacencyState;
     use crate::interface::InterfaceType;
     use crate::lsdb::LspLogReason;
     use crate::northbound::configuration::{ExtendedSeqNumMode, InstanceTraceOption, InterfaceTraceOption, MetricType, StandardApp};
-    use crate::packet::iana::{FloodingAlgo, IgpAlgoType, IgpMetricType, MtId};
+    use crate::packet::iana::{FloodingAlgo, IgpMetricType, MtId};
     use crate::packet::{AreaAddr, LanId, LevelNumber, LevelType, LspId, SystemId};
     use crate::spf::{self, SpfType};
 

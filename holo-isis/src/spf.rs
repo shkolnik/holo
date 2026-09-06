@@ -16,7 +16,7 @@ use chrono::Utc;
 use derive_new::new;
 use holo_utils::ip::{AddressFamily, IpNetworkKind};
 use holo_utils::mac_addr::MacAddr;
-use holo_utils::sr::IgpAlgoType;
+use holo_utils::sr::PrefixSidAlgo;
 use holo_utils::task::TimeoutTask;
 use ipnetwork::IpNetwork;
 use tracing::debug_span;
@@ -1322,7 +1322,7 @@ fn vertex_networks<'a>(
                                 prefix_sid: reach
                                     .sub_tlvs
                                     .prefix_sids
-                                    .get(&IgpAlgoType::Spf)
+                                    .get(&PrefixSidAlgo::Spf)
                                     .cloned(),
                             }
                         });
@@ -1353,7 +1353,7 @@ fn vertex_networks<'a>(
                         prefix_sid: reach
                             .sub_tlvs
                             .prefix_sids
-                            .get(&IgpAlgoType::Spf)
+                            .get(&PrefixSidAlgo::Spf)
                             .cloned(),
                     });
                 ipv6_iter = Some(iter);

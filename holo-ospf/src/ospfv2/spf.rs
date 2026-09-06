@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use enum_as_inner::EnumAsInner;
 use holo_utils::ip::{AddressFamily, Ipv4NetworkExt};
-use holo_utils::sr::IgpAlgoType;
+use holo_utils::sr::PrefixSidAlgo;
 use ipnetwork::Ipv4Network;
 
 use crate::area::Area;
@@ -697,7 +697,7 @@ fn route_prefix_sids(
     adv_rtr: Ipv4Addr,
     prefix: &Ipv4Network,
     route_type: ExtPrefixRouteType,
-) -> BTreeMap<IgpAlgoType, PrefixSid> {
+) -> BTreeMap<PrefixSidAlgo, PrefixSid> {
     let mut prefix_sids = BTreeMap::new();
 
     if let Some(prefix_sid) = area
@@ -709,9 +709,9 @@ fn route_prefix_sids(
             route_type == tlv.route_type
                 || route_type == ExtPrefixRouteType::Unspecified
         })
-        .and_then(|tlv| tlv.prefix_sids.get(&IgpAlgoType::Spf))
+        .and_then(|tlv| tlv.prefix_sids.get(&PrefixSidAlgo::Spf))
     {
-        prefix_sids.insert(IgpAlgoType::Spf, *prefix_sid);
+        prefix_sids.insert(PrefixSidAlgo::Spf, *prefix_sid);
     }
 
     prefix_sids

@@ -101,7 +101,7 @@ static IDENTITY_TYPES: &[(&str, TypeSpec)] = &[
     (
         "prefix-sid-algorithm",
         TypeSpec {
-            rust_type: "IgpAlgoType",
+            rust_type: "PrefixSidAlgo",
             copy_semantics: true,
         },
     ),

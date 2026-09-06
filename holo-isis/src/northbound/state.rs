@@ -18,6 +18,7 @@ use holo_utils::crypto::CryptoAlgo;
 use holo_utils::mac_addr::MacAddr;
 use holo_utils::option::OptionExt;
 use holo_utils::protocol::Protocol;
+use holo_utils::sr::IgpAlgo;
 use holo_yang::types::{HexStr, HexString, TimerValueMillis, TimerValueSecs16, Timeticks};
 use holo_yang::{ToYang, ToYangFlags};
 use ipnetwork::IpNetwork;
@@ -29,7 +30,7 @@ use crate::instance::Instance;
 use crate::interface::Interface;
 use crate::lsdb::{LspEntry, LspLogEntry, LspLogId};
 use crate::northbound::yang_gen::{self, isis};
-use crate::packet::iana::{IgpAlgoType, IgpMetricType};
+use crate::packet::iana::IgpMetricType;
 use crate::packet::subtlvs::capability::{FadStlv, LabelBlockEntry};
 use crate::packet::subtlvs::neighbor::{AdjSidStlv, AslaStlv};
 use crate::packet::subtlvs::prefix::{FapmStlv, PrefixAttrFlags, PrefixSidStlv};
@@ -449,7 +450,7 @@ impl<'a> YangList<'a, Instance> for isis::database::levels::lsp::router_capabili
         Self {
             algo_number: Some(fad.flex_algo),
             metric_type: IgpMetricType::from_u8(fad.metric_type),
-            calc_type: IgpAlgoType::from_u8(fad.calc_type),
+            calc_type: IgpAlgo::from_u8(fad.calc_type),
             priority: Some(fad.priority),
         }
     }

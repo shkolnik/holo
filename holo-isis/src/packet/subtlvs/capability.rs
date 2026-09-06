@@ -13,7 +13,7 @@ use bitflags::bitflags;
 use derive_new::new;
 use holo_utils::bytes::{Bytes, BytesMut};
 use holo_utils::mpls::Label;
-use holo_utils::sr::{IgpAlgoType, Sid};
+use holo_utils::sr::{PrefixSidAlgo, Sid};
 use num_traits::FromPrimitive;
 use serde::{Deserialize, Serialize};
 use tracing::debug_span;
@@ -48,7 +48,7 @@ bitflags! {
 #[derive(Clone, Debug, PartialEq)]
 #[derive(new)]
 #[derive(Deserialize, Serialize)]
-pub struct SrAlgoStlv(BTreeSet<IgpAlgoType>);
+pub struct SrAlgoStlv(BTreeSet<PrefixSidAlgo>);
 
 #[derive(Clone, Debug, PartialEq)]
 #[derive(new)]
@@ -170,7 +170,7 @@ impl SrAlgoStlv {
         let mut list = BTreeSet::new();
         for _ in 0..stlv_len {
             let algo = buf.try_get_u8()?;
-            let Some(algo) = IgpAlgoType::from_u8(algo) else {
+            let Some(algo) = PrefixSidAlgo::from_u8(algo) else {
                 // Unsupported algorithm - ignore.
                 continue;
             };
@@ -194,7 +194,7 @@ impl SrAlgoStlv {
         TLV_HDR_SIZE + self.0.len()
     }
 
-    pub(crate) fn get(&self) -> &BTreeSet<IgpAlgoType> {
+    pub(crate) fn get(&self) -> &BTreeSet<PrefixSidAlgo> {
         &self.0
     }
 }

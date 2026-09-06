@@ -9,7 +9,7 @@ use std::net::Ipv4Addr;
 
 use holo_utils::ip::{AddressFamily, Ipv4NetworkExt};
 use holo_utils::mpls::Label;
-use holo_utils::sr::{IgpAlgoType, Sid, SidLastHopBehavior, SrCfgEvent};
+use holo_utils::sr::{PrefixSidAlgo, Sid, SidLastHopBehavior, SrCfgEvent};
 use ipnetwork::{IpNetwork, Ipv4Network};
 use itertools::Itertools;
 
@@ -654,7 +654,7 @@ fn lsa_orig_router_info(
     let mut srlb = vec![];
     if instance.config.sr_enabled {
         // Fill in supported SR algorithms.
-        sr_algo = Some(SrAlgoTlv::new([IgpAlgoType::Spf].into()));
+        sr_algo = Some(SrAlgoTlv::new([PrefixSidAlgo::Spf].into()));
 
         // Fill in local SRGB.
         for range in &sr_config.srgb {

@@ -29,7 +29,7 @@ pub mod yang_gen {
     use holo_utils::crypto::CryptoAlgo;
     use holo_utils::ip::AddressFamily;
     use holo_utils::southbound::OspfRouteType;
-    use holo_utils::sr::IgpAlgoType;
+    use holo_utils::sr::PrefixSidAlgo;
     pub use routing::control_plane_protocols::control_plane_protocol::ospf;
 
     use crate::area::AreaType;
