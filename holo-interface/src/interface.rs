@@ -281,15 +281,10 @@ impl Interfaces {
             // all kernel-derived state, as a netdev created later with the same
             // name will have a different ifindex.
             if owner == Owner::SYSTEM {
-                if let Some(ifindex) = iface.ifindex.take() {
-                    self.ifindex_tree.remove(&ifindex);
-                }
-                iface.mtu = None;
+                // Notify subscribers that the interface is no longer operative,
+                // while it still holds its old ifindex, so the update is
+                // indistinguishable from a link-down of a known interface.
                 iface.flags = InterfaceFlags::default();
-                iface.addresses.clear();
-
-                // Notify subscribers that the interface is no longer
-                // operative.
                 for sub in self
                     .subscriptions
                     .values()
@@ -297,6 +292,34 @@ impl Interfaces {
                 {
                     ibus::notify_interface_update(&sub.tx, iface);
                 }
+
+                // Withdraw all addresses of the netdev that is gone.
+                let ifname = iface.name.clone();
+                for (addr, iface_addr) in std::mem::take(&mut iface.addresses) {
+                    for sub in self
+                        .subscriptions
+                        .values()
+                        .chain(iface.subscriptions.values())
+                        .filter(|sub| {
+                            sub.afs.contains(&addr.ip().address_family())
+                        })
+                    {
+                        ibus::notify_addr_del(
+                            &sub.tx,
+                            ifname.clone(),
+                            iface_addr.addr,
+                            iface_addr.flags,
+                        );
+                    }
+                }
+
+                // Discard the remaining kernel-derived state, as a netdev
+                // created later with the same name will have a different
+                // ifindex.
+                if let Some(ifindex) = iface.ifindex.take() {
+                    self.ifindex_tree.remove(&ifindex);
+                }
+                iface.mtu = None;
 
                 // Check if the Router ID needs to be updated.
                 self.update_router_id();
@@ -542,17 +565,36 @@ mod tests {
         InterfaceFlags::OPERATIVE | InterfaceFlags::BROADCAST
     }
 
-    // Returns the ifindex carried by the last interface update notification.
-    fn last_upd_ifindex(
-        ibus_rx: &mut UnboundedReceiver<IbusMsg>,
-    ) -> Option<u32> {
-        let mut ifindex = None;
+    // Returns all pending notifications.
+    fn drain(ibus_rx: &mut UnboundedReceiver<IbusMsg>) -> Vec<IbusMsg> {
+        let mut msgs = Vec::new();
         while let Ok(msg) = ibus_rx.try_recv() {
-            if let IbusMsg::InterfaceUpd(msg) = msg {
-                ifindex = Some(msg.ifindex);
-            }
+            msgs.push(msg);
         }
-        ifindex
+        msgs
+    }
+
+    // Returns the ifindex and flags of the last interface update notification.
+    fn last_upd(msgs: &[IbusMsg]) -> Option<(u32, InterfaceFlags)> {
+        msgs.iter().rev().find_map(|msg| match msg {
+            IbusMsg::InterfaceUpd(msg) => Some((msg.ifindex, msg.flags)),
+            _ => None,
+        })
+    }
+
+    // Returns the ifindex carried by the last interface update notification.
+    fn last_upd_ifindex(msgs: &[IbusMsg]) -> Option<u32> {
+        last_upd(msgs).map(|(ifindex, _)| ifindex)
+    }
+
+    // Returns the addresses carried by the address removal notifications.
+    fn addr_dels(msgs: &[IbusMsg]) -> Vec<IpNetwork> {
+        msgs.iter()
+            .filter_map(|msg| match msg {
+                IbusMsg::InterfaceAddressDel(msg) => Some(msg.addr),
+                _ => None,
+            })
+            .collect()
     }
 
     #[test]
@@ -570,9 +612,16 @@ mod tests {
         );
         assert_eq!(interfaces.get_by_name("eth0").unwrap().ifindex, Some(10));
         assert!(interfaces.get_by_ifindex(10).is_some());
-        assert_eq!(last_upd_ifindex(&mut ibus_rx), Some(10));
+        assert_eq!(last_upd_ifindex(&drain(&mut ibus_rx)), Some(10));
+
+        let addr4: IpNetwork = "10.0.0.1/24".parse().unwrap();
+        let addr6: IpNetwork = "2001:db8::1/64".parse().unwrap();
+        interfaces.addr_add(10, addr4);
+        interfaces.addr_add(10, addr6);
+        let _ = drain(&mut ibus_rx);
 
         interfaces.remove("eth0", Owner::SYSTEM, &netlink_tx);
+        let msgs = drain(&mut ibus_rx);
 
         // The interface survives since it's still configured, but all
         // kernel-derived state is gone.
@@ -584,8 +633,14 @@ mod tests {
         assert!(iface.addresses.is_empty());
         assert!(interfaces.get_by_ifindex(10).is_none());
 
-        // Subscribers are told the interface is no longer operative.
-        assert_eq!(last_upd_ifindex(&mut ibus_rx), Some(0));
+        // Subscribers are told the interface is no longer operative, and the
+        // notification carries the old ifindex, never zero.
+        assert_eq!(last_upd(&msgs), Some((10, InterfaceFlags::default())));
+
+        // Each address of the interface is withdrawn.
+        let mut dels = addr_dels(&msgs);
+        dels.sort();
+        assert_eq!(dels, vec![addr4, addr6]);
     }
 
     #[test]
@@ -602,7 +657,7 @@ mod tests {
             &netlink_tx,
         );
         interfaces.remove("eth0", Owner::SYSTEM, &netlink_tx);
-        let _ = last_upd_ifindex(&mut ibus_rx);
+        let _ = drain(&mut ibus_rx);
 
         interfaces.update(
             "eth0".to_owned(),
@@ -623,7 +678,7 @@ mod tests {
         assert!(interfaces.get_by_ifindex(10).is_none());
 
         // The notification carries the new ifindex.
-        assert_eq!(last_upd_ifindex(&mut ibus_rx), Some(11));
+        assert_eq!(last_upd_ifindex(&drain(&mut ibus_rx)), Some(11));
     }
 
     #[test]
@@ -639,7 +694,7 @@ mod tests {
             MacAddr::default(),
             &netlink_tx,
         );
-        let _ = last_upd_ifindex(&mut ibus_rx);
+        let _ = drain(&mut ibus_rx);
 
         interfaces.update(
             "eth0".to_owned(),
@@ -656,7 +711,7 @@ mod tests {
             Some(&"eth0".to_owned())
         );
         assert!(interfaces.get_by_ifindex(10).is_none());
-        assert_eq!(last_upd_ifindex(&mut ibus_rx), Some(11));
+        assert_eq!(last_upd_ifindex(&drain(&mut ibus_rx)), Some(11));
     }
 
     #[test]
