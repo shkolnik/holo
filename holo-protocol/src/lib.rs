@@ -117,6 +117,9 @@ pub struct InstanceShared {
     pub bfd_socket_policy: BfdSocketPolicy,
     // BGP TCP listen policy (wildcard listener or none).
     pub bgp_listen_policy: BgpListenPolicy,
+    // 802.1p priority for this instance's control sockets (SO_PRIORITY).
+    // None leaves the socket priority untouched.
+    pub control_priority: Option<u32>,
 }
 
 /// Instance input message.
@@ -177,6 +180,7 @@ impl std::fmt::Debug for InstanceShared {
             .field("fib_policy", &self.fib_policy)
             .field("bfd_socket_policy", &self.bfd_socket_policy)
             .field("bgp_listen_policy", &self.bgp_listen_policy)
+            .field("control_priority", &self.control_priority)
             .finish()
     }
 }
