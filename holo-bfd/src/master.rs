@@ -36,6 +36,8 @@ pub struct Master {
     pub interfaces: HashMap<String, Interface>,
     // Rx socket policy (ports, address families).
     pub socket_policy: BfdSocketPolicy,
+    // 802.1p priority for the Tx sockets (SO_PRIORITY); None leaves it unset.
+    pub control_priority: Option<u32>,
     // Instance Tx channels.
     pub tx: InstanceChannelsTx<Master>,
 }
@@ -147,6 +149,7 @@ impl ProtocolInstance for Master {
             sessions: Default::default(),
             interfaces: Default::default(),
             socket_policy: shared.bfd_socket_policy,
+            control_priority: shared.control_priority,
             tx,
         }
     }

@@ -238,8 +238,9 @@ fn process_event(master: &mut Master, event: Event) {
             master.update_udp_rx_tasks();
         }
         Event::UpdateTxSocket(sess_idx) => {
+            let control_priority = master.control_priority;
             let sess = &mut master.sessions[sess_idx];
-            sess.update_socket_tx();
+            sess.update_socket_tx(control_priority);
         }
         Event::UpdateTxInterval(sess_idx) => {
             let sess = &mut master.sessions[sess_idx];

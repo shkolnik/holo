@@ -61,6 +61,7 @@ pub(crate) fn process_client_peer_reg(
 ) -> Result<(), Error> {
     Debug::SessionClientReg(&sess_key, &client_id).log();
 
+    let control_priority = master.control_priority;
     let (sess_idx, sess) = master.sessions.insert(sess_key);
     let sess_client = SessionClient::new(client_id, client_config, client.tx);
     sess.clients.insert(client.id, sess_client);
@@ -69,7 +70,7 @@ pub(crate) fn process_client_peer_reg(
     sess.poll_sequence_start();
 
     // Try to initialize session if possible.
-    sess.update_socket_tx();
+    sess.update_socket_tx(control_priority);
     match &sess.key {
         SessionKey::IpSingleHop { ifname, .. } => {
             if let Some(iface) = master.interfaces.get(ifname) {

@@ -340,7 +340,7 @@ impl Session {
     }
 
     // Creates or updates the UDP socket used to send BFD packets.
-    pub(crate) fn update_socket_tx(&mut self) {
+    pub(crate) fn update_socket_tx(&mut self, priority: Option<u32>) {
         let (ifname, af, src, ttl) = match &self.key {
             SessionKey::IpSingleHop { ifname, dst } => {
                 let af = dst.address_family();
@@ -353,7 +353,7 @@ impl Session {
                 (None, af, *src, ttl)
             }
         };
-        match network::socket_tx(ifname, af, src, ttl) {
+        match network::socket_tx(ifname, af, src, ttl, priority) {
             Ok(socket) => self.state.socket_tx = Some(Arc::new(socket)),
             Err(error) => {
                 IoError::UdpSocketError(error).log();
