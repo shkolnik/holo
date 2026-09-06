@@ -33,7 +33,7 @@ use crate::collections::{Arena, LspEntryId};
 use crate::debug::{Debug, LspPurgeReason};
 use crate::instance::{InstanceArenas, InstanceUpView};
 use crate::interface::{Interface, InterfaceType};
-use crate::northbound::configuration::{LinkAttrMode, MetricType};
+use crate::northbound::configuration::MetricType;
 use crate::northbound::notification;
 use crate::packet::iana::{FloodingAlgo, MtId, Nlpid};
 use crate::packet::pdu::{Lsp, LspFlags, LspTlvs, Pdu};
@@ -929,12 +929,7 @@ fn lsp_build_is_reach_lan_stlvs(
     }
 
     // Add ASLA Sub-TLV(s).
-    if matches!(
-        instance.config.link_attr_mode,
-        LinkAttrMode::AppSpecific | LinkAttrMode::Transition
-    ) {
-        lsp_build_is_reach_asla_stlvs(instance, iface, &mut sub_tlvs);
-    }
+    lsp_build_is_reach_asla_stlvs(iface, &mut sub_tlvs);
 
     sub_tlvs
 }
@@ -963,18 +958,12 @@ fn lsp_build_is_reach_p2p_stlvs(
     }
 
     // Add ASLA Sub-TLV(s).
-    if matches!(
-        instance.config.link_attr_mode,
-        LinkAttrMode::AppSpecific | LinkAttrMode::Transition
-    ) {
-        lsp_build_is_reach_asla_stlvs(instance, iface, &mut sub_tlvs);
-    }
+    lsp_build_is_reach_asla_stlvs(iface, &mut sub_tlvs);
 
     sub_tlvs
 }
 
 fn lsp_build_is_reach_asla_stlvs(
-    _instance: &InstanceUpView<'_>,
     iface: &Interface,
     sub_tlvs: &mut IsReachStlvs,
 ) {

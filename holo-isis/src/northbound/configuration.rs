@@ -103,7 +103,6 @@ pub struct InstanceCfg {
     pub preference: Preference,
     pub overload_status: bool,
     pub mt: HashMap<MtId, InstanceMtCfg>,
-    pub link_attr_mode: LinkAttrMode,
     pub summaries: JointPrefixMap<IpNetwork, SummaryCfg>,
     pub flooding_reduction: InstanceFloodingReductionCfg,
     pub att_suppress: bool,
@@ -118,18 +117,6 @@ pub struct InstanceCfg {
 pub struct InstanceMtCfg {
     pub enabled: bool,
     pub default_metric: LevelsCfgWithDefault<u32>,
-}
-
-// Operation mode for link attribute advertisements (RFC 9479).
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum LinkAttrMode {
-    // Advertise only legacy link attributes.
-    #[default]
-    Legacy,
-    // Advertise both legacy and application-specific link attributes.
-    Transition,
-    // Advertise only application-specific link attributes.
-    AppSpecific,
 }
 
 // Standard application using application-specific link attributes (RFC 9479).
@@ -600,30 +587,6 @@ fn apply_instance(instance: &mut Instance, change: ConfigChange, event_queue: &m
                 base_vid: keys.base_vid,
             };
             apply_spb_service(instance, key, change)?;
-        }
-        ConfigChange::IsisLinkAttrLegacy(op) => {
-            if op == ConfigOp::Create {
-                instance.config.link_attr_mode = LinkAttrMode::Legacy;
-                for level in LevelType::All {
-                    event_queue.insert(Event::ReoriginateLsps(level));
-                }
-            }
-        }
-        ConfigChange::IsisLinkAttrTransition(op) => {
-            if op == ConfigOp::Create {
-                instance.config.link_attr_mode = LinkAttrMode::Transition;
-                for level in LevelType::All {
-                    event_queue.insert(Event::ReoriginateLsps(level));
-                }
-            }
-        }
-        ConfigChange::IsisLinkAttrAppSpecific(op) => {
-            if op == ConfigOp::Create {
-                instance.config.link_attr_mode = LinkAttrMode::AppSpecific;
-                for level in LevelType::All {
-                    event_queue.insert(Event::ReoriginateLsps(level));
-                }
-            }
         }
         ConfigChange::SegmentRoutingEnabled(enabled) => {
             instance.config.sr.enabled = enabled;
@@ -1749,7 +1712,6 @@ impl Default for InstanceCfg {
             preference: Default::default(),
             overload_status,
             mt: Default::default(),
-            link_attr_mode: Default::default(),
             summaries: Default::default(),
             flooding_reduction: Default::default(),
             att_suppress,

@@ -1,7 +1,7 @@
 module iana-igp-link-attr-apps {
   yang-version 1.1;
   namespace "urn:ietf:params:xml:ns:yang:iana-igp-link-attr-apps";
-  prefix iana-link-attr-app;
+  prefix iana-link-attr-apps;
 
   organization
     "Internet Assigned Numbers Authority (IANA)";
@@ -16,8 +16,9 @@ module iana-igp-link-attr-apps {
      Tel:    +1 310 301 5800
       <mailto:iana@iana.org>";
   description
-    "The YANG module defines the identities for Interior Gateway
-     Protocol (IGP) Application IDs used for Link Attributes.
+    "The YANG module defines the YANG data types for IANA-registered
+     Interior Gateway Protocol (IGP) Application IDs used for Link
+     Attributes.
 
      This YANG module is maintained by IANA and reflects the 'Link
      Attribute Application Identifiers' registry.
@@ -45,7 +46,13 @@ module iana-igp-link-attr-apps {
 
      The latest version of this YANG module is available at
      https://www.iana.org/assignments/yang-parameters.";
-  revision 2026-04-14 {
+
+  reference
+    "Interior Gateway Protocol (IGP) Parameters, IGP Algorithm Types
+     (https://www.iana.org/assignments/igp-parameters/
+      igp-parameters.xhtml#link-attribute-application-identifiers)";
+
+  revision 2026-07-09 {
     description
       "Initial Version";
     reference
@@ -53,53 +60,44 @@ module iana-igp-link-attr-apps {
                  Link Attributes and Flexible Algorithm";
   }
 
-  identity igp-link-attr-app {
-    description
-      "Base identity for Standard Applications";
-    reference
-      "RFC 9492: OSPF Application-Specific Link Attributes";
-  }
+  typedef igp-link-attr-app {
+    type enumeration {
+      enum rsvp-te-app {
+        value 0;
+        description
+          "RSVP-TE (R-bit).";
+        reference
+          "RFC 9479: IS-IS Application-Specific Link Attributes";
+      }
 
-  identity rsvp-te-app {
-    base igp-link-attr-app;
-    description
-      "RSVP Traffic Engineering (TE) Application - This
-       corresponds to Bit 0 (R-BIT) in the Standard Application
-       Bit Mask (SABM).";
-    reference
-      "RFC 3630: Traffic Engineering (TE) for OSPFv2
-       RFC 5329: Traffic Engineering Extensions to OSPFv3";
-  }
+      enum segment-routing-policy-app {
+        value 1;
+        description
+          "Segment Routing Policy (S-bit).";
+        reference
+          "RFC 9479: IS-IS Application-Specific Link Attributes";
+      }
 
-  identity sr-policy-app {
-    base igp-link-attr-app;
-    description
-      "Segment Routing (SR) Policy Application - This
-       corresponds to Bit 1 (S-BIT) in the Standard Application
-       Bit Mask (SABM).";
-    reference
-      "RFC 8665: OSPF Extensions for Segment Routing
-       RFC 8666: OSPFv3 Extensions for Segment Routing";
-  }
+      enum loop-free-alternate-app {
+        value 2;
+        description
+          "Loop-Free Alternate (F-bit).";
+        reference
+          "RFC 9479: IS-IS Application-Specific Link Attributes";
+      }
 
-  identity lfa-app {
-    base igp-link-attr-app;
+      enum flexible-algorithm-app {
+        value 3;
+        description
+          "Flexible Algorithm (X-bit).";
+        reference
+          "RFC 9350: IGP Flexible Algorithm, Section 12.";
+      }
+    }
     description
-      "Loop-Free Alternative (LFA) Application - This
-       corresponds to Bit 2 (F-BIT) in the Standard Application
-       Bit Mask (SABM).";
+      "Application IDs used for Link Attributes, which are defined
+      in the IANA Link Attribute Application Identifiers registry.";
     reference
-      "RFC 8102: Remote-LFA Node Protection and Manageability
-       RFC 9855: Topology Independent Fast Reroute Using
-                 Segment Routing";
-  }
-  identity flex-algo-app {
-    base igp-link-attr-app;
-    description
-      "Flexible Algorithm Application - This
-       corresponds to Bit 3 (X-BIT) in the Standard Application
-       Bit Mask (SABM).";
-    reference
-      "RFC 9350: IGP Flexible Algorithm, Section 12.";
+      "RFC 9479: IS-IS Application-Specific Link Attributes";
   }
 }

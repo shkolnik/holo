@@ -15,32 +15,12 @@ module holo-ietf-isis-flex-algo-deviations {
     prefix isis;
   }
 
-  import ietf-te-types {
-    prefix te-types;
-  }
-
   organization
     "Holo Routing Stack";
 
   description
     "This module defines deviation statements for the ietf-isis-flex-algo
      module.";
-
-  /*
-   * Type changes
-   */
-
-  deviation "/rt:routing/rt:control-plane-protocols/rt:control-plane-protocol/isis:isis/isis:database/isis:levels/isis:lsp/isis:router-capabilities/isis:router-capability/isis-flex-algo:fad-tlvs/isis-flex-algo:fad-tlv/isis-flex-algo:fa-in-any-ag-sub-tlv/isis-flex-algo:extended-admin-group" {
-    deviate replace {
-      type te-types:extended-admin-group;
-    }
-  }
-
-  deviation "/rt:routing/rt:control-plane-protocols/rt:control-plane-protocol/isis:isis/isis:database/isis:levels/isis:lsp/isis:router-capabilities/isis:router-capability/isis-flex-algo:fad-tlvs/isis-flex-algo:fad-tlv/isis-flex-algo:fa-in-all-ag-sub-tlv/isis-flex-algo:extended-admin-group" {
-    deviate replace {
-      type te-types:extended-admin-group;
-    }
-  }
 
   /*
    * Not supported nodes
@@ -69,7 +49,7 @@ module holo-ietf-isis-flex-algo-deviations {
   */
 
   /*
-  deviation "/rt:routing/rt:control-plane-protocols/rt:control-plane-protocol/isis:isis/isis-flex-algo:isis-flex-algo/isis-flex-algo:flex-algo/isis-flex-algo:exclude-srlgs" {
+  deviation "/rt:routing/rt:control-plane-protocols/rt:control-plane-protocol/isis:isis/isis-flex-algo:isis-flex-algo/isis-flex-algo:flex-algo/isis-flex-algo:exclude-srlg" {
     deviate not-supported;
   }
   */

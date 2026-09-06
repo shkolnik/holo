@@ -15,10 +15,6 @@ module holo-ietf-ospf-deviations {
     prefix key-chain;
   }
 
-  import holo-ospf {
-    prefix holo-ospf;
-  }
-
   organization
     "Holo Routing Stack";
 
@@ -235,18 +231,6 @@ module holo-ietf-ospf-deviations {
       must 'derived-from-or-self(., "key-chain:hmac-sha-1") or derived-from-or-self(., "key-chain:hmac-sha-256") or derived-from-or-self(., "key-chain:hmac-sha-384") or derived-from-or-self(., "key-chain:hmac-sha-512")' {
         error-message
           "Unsupported cryptographic algorithm.";
-      }
-    }
-  }
-
-  deviation "/rt:routing/rt:control-plane-protocols/rt:control-plane-protocol/ospf:ospf/holo-ospf:instance-id" {
-    deviate add {
-      must '((../ospf:address-family = "ipv6" or '
-         + 'not(../ospf:address-family)) and . <= 31) or '
-         + '(../ospf:address-family = "ipv4" and '
-         + '. >= 64 and . <= 95)' {
-        error-message
-          "The instance ID isn't valid for the configured address family.";
       }
     }
   }

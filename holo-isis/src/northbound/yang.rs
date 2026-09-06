@@ -315,9 +315,9 @@ impl ToYang for SpfType {
 impl ToYang for IgpMetricType {
     fn to_yang(&self) -> Cow<'static, str> {
         match self {
-            IgpMetricType::IgpMetric => "iana-igp-metric-types:igp-metric".into(),
-            IgpMetricType::MinUniLinkDelay => "iana-igp-metric-types:min-unidirectional-link-delay".into(),
-            IgpMetricType::TeDefaultMetric => "iana-igp-metric-types:te-default-metric".into(),
+            IgpMetricType::IgpMetric => "igp-metric".into(),
+            IgpMetricType::MinUniLinkDelay => "min-unidirectional-link-delay".into(),
+            IgpMetricType::TeDefaultMetric => "te-default-metric".into(),
         }
     }
 }
@@ -325,8 +325,8 @@ impl ToYang for IgpMetricType {
 impl ToYang for IgpAlgoType {
     fn to_yang(&self) -> Cow<'static, str> {
         match self {
-            IgpAlgoType::Spf => "iana-igp-algo-types:algo-spf".into(),
-            IgpAlgoType::StrictSpf => "iana-igp-algo-types:algo-strict-spf".into(),
+            IgpAlgoType::Spf => "algo-spf".into(),
+            IgpAlgoType::StrictSpf => "algo-strict-spf".into(),
         }
     }
 }
@@ -345,13 +345,13 @@ impl ToYangFlags for AslaSabmFlags {
     fn to_yang_flags(&self) -> Vec<&'static str> {
         let mut bits = vec![];
         if self.contains(AslaSabmFlags::R) {
-            bits.push("iana-igp-link-attr-apps:rsvp-te-app");
+            bits.push("rsvp-te-app");
         }
         if self.contains(AslaSabmFlags::S) {
-            bits.push("iana-igp-link-attr-apps:sr-policy-app");
+            bits.push("segment-routing-policy-app");
         }
         if self.contains(AslaSabmFlags::F) {
-            bits.push("iana-igp-link-attr-apps:lfa-app");
+            bits.push("loop-free-alternate-app");
         }
         bits
     }
@@ -472,9 +472,9 @@ impl TryFromYang for ExtendedSeqNumMode {
 impl TryFromYang for StandardApp {
     fn try_from_yang(value: &str) -> Option<StandardApp> {
         match value {
-            "iana-igp-link-attr-apps:rsvp-te-app" => Some(StandardApp::RsvpTe),
-            "iana-igp-link-attr-apps:sr-policy-app" => Some(StandardApp::SrPolicy),
-            "iana-igp-link-attr-apps:lfa-app" => Some(StandardApp::Lfa),
+            "rsvp-te-app" => Some(StandardApp::RsvpTe),
+            "segment-routing-policy-app" => Some(StandardApp::SrPolicy),
+            "loop-free-alternate-app" => Some(StandardApp::Lfa),
             _ => None,
         }
     }

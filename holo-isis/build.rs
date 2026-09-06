@@ -73,10 +73,6 @@ static TYPEDEFS: &[(&str, TypeSpec)] = &[
             copy_semantics: true,
         },
     ),
-];
-
-// IS-IS-specific YANG identity types.
-static IDENTITY_TYPES: &[(&str, TypeSpec)] = &[
     (
         "algo-type",
         TypeSpec {
@@ -84,6 +80,17 @@ static IDENTITY_TYPES: &[(&str, TypeSpec)] = &[
             copy_semantics: true,
         },
     ),
+    (
+        "metric-type",
+        TypeSpec {
+            rust_type: "IgpMetricType",
+            copy_semantics: true,
+        },
+    ),
+];
+
+// IS-IS-specific YANG identity types.
+static IDENTITY_TYPES: &[(&str, TypeSpec)] = &[
     (
         "control-plane-protocol",
         TypeSpec {
@@ -109,13 +116,6 @@ static IDENTITY_TYPES: &[(&str, TypeSpec)] = &[
         "lsp-log-reason",
         TypeSpec {
             rust_type: "LspLogReason",
-            copy_semantics: true,
-        },
-    ),
-    (
-        "metric-type",
-        TypeSpec {
-            rust_type: "IgpMetricType",
             copy_semantics: true,
         },
     ),

@@ -460,9 +460,8 @@ impl<'a> YangContainer<'a, Instance> for isis::database::levels::lsp::router_cap
 
     fn new(_instance: &'a Instance, fad: &Self::ParentListEntry) -> Option<Self> {
         let stlv = fad.sub_tlvs.exclude_admin_group.as_ref()?;
-        let iter = stlv.get().chunks(4).map(HexStr);
         Some(Self {
-            extended_admin_group: Some(Box::new(iter)),
+            extended_admin_group: Some(HexStr(stlv.get())),
         })
     }
 }
@@ -472,9 +471,8 @@ impl<'a> YangContainer<'a, Instance> for isis::database::levels::lsp::router_cap
 
     fn new(_instance: &'a Instance, fad: &Self::ParentListEntry) -> Option<Self> {
         let stlv = fad.sub_tlvs.include_any_admin_group.as_ref()?;
-        let iter = stlv.get().chunks(4).map(HexStr);
         Some(Self {
-            extended_admin_group: Some(Box::new(iter)),
+            extended_admin_group: Some(HexStr(stlv.get())),
         })
     }
 }
@@ -484,9 +482,8 @@ impl<'a> YangContainer<'a, Instance> for isis::database::levels::lsp::router_cap
 
     fn new(_instance: &'a Instance, fad: &Self::ParentListEntry) -> Option<Self> {
         let stlv = fad.sub_tlvs.include_all_admin_group.as_ref()?;
-        let iter = stlv.get().chunks(4).map(HexStr);
         Some(Self {
-            extended_admin_group: Some(Box::new(iter)),
+            extended_admin_group: Some(HexStr(stlv.get())),
         })
     }
 }
@@ -497,7 +494,7 @@ impl<'a> YangContainer<'a, Instance> for isis::database::levels::lsp::router_cap
     fn new(_instance: &'a Instance, fad: &Self::ParentListEntry) -> Option<Self> {
         let stlv = fad.sub_tlvs.flags.as_ref()?;
         Some(Self {
-            fad_flags: stlv.get().to_yang_flags_iter(),
+            fad_flag: stlv.get().to_yang_flags_iter(),
         })
     }
 }
@@ -509,7 +506,7 @@ impl<'a> YangContainer<'a, Instance> for isis::database::levels::lsp::router_cap
         let stlv = fad.sub_tlvs.exclude_srlgs.as_ref()?;
         let iter = stlv.get().iter().copied();
         Some(Self {
-            srlgs: Some(Box::new(iter)),
+            srlg: Some(Box::new(iter)),
         })
     }
 }

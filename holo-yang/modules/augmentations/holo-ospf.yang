@@ -244,6 +244,13 @@ module holo-ospf {
       "OSPFv3 protocol instance-level augmentations";
     leaf instance-id {
       type uint8;
+      must '((../ospf:address-family = "ipv6" or '
+         + 'not(../ospf:address-family)) and . <= 31) or '
+         + '(../ospf:address-family = "ipv4" and '
+         + '. >= 64 and . <= 95)' {
+        error-message
+          "The instance ID isn't valid for the configured address family.";
+      }
       default "0";
       description
         "OSPFv3 instance ID.";

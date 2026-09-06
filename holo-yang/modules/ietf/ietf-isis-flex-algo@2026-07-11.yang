@@ -12,7 +12,7 @@ module ietf-isis-flex-algo {
   import ietf-te-types {
     prefix te-types;
     reference
-      "RFC8776: Common YANG Data Types for Traffic Engineering.";
+      "RFC 8776: Common YANG Data Types for Traffic Engineering.";
   }
   import ietf-isis {
     prefix isis;
@@ -26,7 +26,7 @@ module ietf-isis-flex-algo {
        <https://www.iana.org/assignments/igp-parameters>.";
   }
   import iana-igp-metric-types {
-    prefix iana-metric-type;
+    prefix iana-metric-types;
     reference
       "IANA IGP Metric-Type registry,
        <https://www.iana.org/assignments/igp-parameters>.";
@@ -39,11 +39,11 @@ module ietf-isis-flex-algo {
      WG List:  <mailto:lsr@ietf.org>
 
      Author:    Yingzhen Qu
-               <mailto:yingzhen.ietf@gmail.com>
+                <mailto:yingzhen.ietf@gmail.com>
      Author:    Acee Lindem
-               <mailto:acee.ietf@gmail.com>
+                <mailto:acee.ietf@gmail.com>
      Author:    Madhavi Joshi
-               <madhavi@arrcus.com>
+                <mailto:madhavi@arrcus.com>
     ";
   description
     "The YANG module defines the configuration and operational
@@ -64,15 +64,9 @@ module ietf-isis-flex-algo {
      (https://www.iana.org/assignments/yang-parameters).
 
      This version of this YANG module is part of RFC XXXX; see
-     the RFC itself for full legal notices.
+     the RFC itself for full legal notices.";
 
-     The key words 'MUST', 'MUST NOT', 'REQUIRED', 'SHALL', 'SHALL
-     NOT', 'SHOULD', 'SHOULD NOT', 'RECOMMENDED', 'NOT RECOMMENDED',
-     'MAY', and 'OPTIONAL' in this document are to be interpreted as
-     described in BCP 14 (RFC 2119) (RFC 8174) when, and only when,
-     they appear in all capitals, as shown here.";
-
-  revision 2026-06-26 {
+  revision 2026-07-11 {
     description
       "Initial Version";
     reference
@@ -86,6 +80,7 @@ module ietf-isis-flex-algo {
     description
       "Base identity for IS-IS FAD flags.";
   }
+
   identity m-flag {
     base fad-flags;
     description
@@ -95,14 +90,14 @@ module ietf-isis-flex-algo {
        and external prefix calculation.  Note that this flag is not
        applicable to prefixes advertised as SRv6 locators.";
     reference
-      "RFC 9350: IGP Flexible Algorithm, Section 9.1";
+      "RFC 9350: IGP Flexible Algorithm, Section 6.4";
   }
 
   /* Groupings */
 
   grouping fa-ex-ag-sub-tlv {
     container fa-ex-ag-sub-tlv {
-      leaf-list extended-admin-group {
+      leaf extended-admin-group {
         type te-types:extended-admin-group;
         description
           "Extended administrative group value.";
@@ -110,7 +105,9 @@ module ietf-isis-flex-algo {
           "RFC 7308: Extended Administrative Groups in MPLS-TE";
       }
       description
-        "The flex-algo exclude admin group sub-tlv.";
+        "The flex-algo exclude admin group sub-tlv. Note that the
+         presence of more than one Exclude Extended Admin Group
+         sub-TLV will result in an invalid FAD TLV.";
     }
     description
       "The flex-algo exclude admin group sub-tlv.";
@@ -118,15 +115,17 @@ module ietf-isis-flex-algo {
 
   grouping fa-in-any-ag-sub-tlv {
     container fa-in-any-ag-sub-tlv {
-      leaf-list extended-admin-group {
-        type uint64;
+      leaf extended-admin-group {
+        type te-types:extended-admin-group;
         description
           "Extended administrative group value.";
         reference
           "RFC 7308: Extended Administrative Groups in MPLS-TE";
       }
       description
-        "The flex-algo include-any admin group sub-tlv.";
+        "The flex-algo include-any admin group sub-tlv. Note that
+         the presence of more than one Include-Any Extended Admin
+         Group sub-TLV will result in an invalid FAD TLV.";
     }
     description
       "The flex-algo include-any admin group sub-tlv.";
@@ -134,15 +133,17 @@ module ietf-isis-flex-algo {
 
   grouping fa-in-all-ag-sub-tlv {
     container fa-in-all-ag-sub-tlv {
-      leaf-list extended-admin-group {
-        type uint64;
+      leaf extended-admin-group {
+        type te-types:extended-admin-group;
         description
           "Extended administrative group value.";
         reference
           "RFC 7308: Extended Administrative Groups in MPLS-TE";
       }
       description
-        "The flex-algo include-all admin group sub-tlv.";
+        "The flex-algo include-all admin group sub-tlv. Note that
+         the presence of more than one Include-All Extended Admin
+         Group sub-TLV will result in an invalid FAD TLV.";
     }
     description
       "The flex-algo include-all admin group sub-tlv.";
@@ -150,7 +151,7 @@ module ietf-isis-flex-algo {
 
   grouping fad-flags-sub-tlv {
     container fad-flags-sub-tlv {
-      leaf-list fad-flags {
+      leaf-list fad-flag {
         type identityref {
           base fad-flags;
         }
@@ -166,13 +167,16 @@ module ietf-isis-flex-algo {
 
   grouping fa-ex-srlg-sub-tlv {
     container fa-ex-srlg-sub-tlv {
-      leaf-list srlgs {
-        type uint32;
+      leaf-list srlg {
+        type te-types:srlg;
         description
-          "SRLG value as defined in RFC 4203.";
+          "SRLG value as defined in RFC 5307.";
       }
       description
         "The flex-algo exclude SRLG sub-tlv.";
+      reference
+        "RFC 5307: IS-IS Extensions in Support of
+         Generalized Multi-Protocol Label Switching (GMPLS)";
     }
     description
       "The flex-algo exclude SRLG sub-tlv.";
@@ -189,20 +193,14 @@ module ietf-isis-flex-algo {
              Flex-Algorithm numbers are in the inclusive range
              128-255 as specified in RFC 9350. There should only be
              a single FAD TLV per algorithm number.";
-          reference
-            "RFC 9350: IGP Flexible Algorithm, Section 5";
         }
         leaf metric-type {
-          type identityref {
-            base iana-metric-type:metric-type;
-          }
+          type iana-metric-types:metric-type;
           description
             "Type of metric to be used during the calculation.";
         }
         leaf calc-type {
-          type identityref {
-            base iana-algo-types:algo-type;
-          }
+          type iana-algo-types:algo-type;
           description
             "IGP algorithm types, value from 0 to 127 as
              defined under 'Interior Gateway Protocol (IGP)
@@ -224,6 +222,8 @@ module ietf-isis-flex-algo {
       }
       description
         "IS-IS Flexible Algorithm Definition TLV.";
+      reference
+        "RFC 9350: IGP Flexible Algorithm, Section 5";
     }
     description
       "IS-IS Flexible Algorithm Definition (FAD) TLV.";
@@ -258,8 +258,9 @@ module ietf-isis-flex-algo {
   augment "/rt:routing/"
         + "rt:control-plane-protocols/rt:control-plane-protocol"
         + "/isis:isis" {
-    when "/rt:routing/rt:control-plane-protocols/"
-       + "rt:control-plane-protocol/rt:type = 'isis:isis'" {
+    when "derived-from-or-self(/rt:routing"
+       + "/rt:control-plane-protocols/"
+       + "rt:control-plane-protocol/rt:type, 'isis:isis')" {
       description
         "This augments the IS-IS routing protocol when used";
     }
@@ -287,45 +288,41 @@ module ietf-isis-flex-algo {
         }
         container admin-groups {
           if-feature "te-types:extended-admin-groups";
-          leaf-list exclude-admin-groups {
+          leaf exclude-admin-group {
             type te-types:extended-admin-group;
             description
               "Exclude rule used during the flex-algo
                path computation.";
           }
-          leaf-list include-any-admin-groups {
+          leaf include-any-admin-group {
             type te-types:extended-admin-group;
             description
               "Include-any rule used during the flex-algo
                path computation.";
           }
-          leaf-list include-all-admin-groups {
+          leaf include-all-admin-group {
             type te-types:extended-admin-group;
             description
               "Include-all rule used during the flex-algo
                path computation.";
           }
           description
-            "Specify links for the flex-algo path computation.";
+            "Specify administrative groups for the flex-algo
+             path computation.";
         }
-        leaf-list exclude-srlgs {
+        leaf-list exclude-srlg {
           type te-types:srlg;
           description
             "Shared Risk Link Groups (SRLGs) to be excluded during
              the flex-algo path computation.";
         }
         leaf metric-type {
-          type identityref {
-            base iana-metric-type:metric-type;
-          }
+          type iana-metric-types:metric-type;
           description
             "Type of metric to be used during the calculation.";
         }
         leaf calc-type {
-          type identityref {
-            base iana-algo-types:algo-type;
-          }
-          default "iana-algo-types:algo-spf";
+          type iana-algo-types:algo-type;
           description
             "Calculation-type. Value from 0-127 inclusive from the
              IANA 'IGP Algorithm Types' registry defined under the
@@ -343,6 +340,8 @@ module ietf-isis-flex-algo {
         }
         description
           "List of flex-algo configurations.";
+        reference
+          "RFC 9350: IGP Flexible Algorithm, Section 5";
       }
       description
         "Flexible Algorithm configuration.";
@@ -355,9 +354,9 @@ module ietf-isis-flex-algo {
         + "rt:control-plane-protocols/rt:control-plane-protocol"
         + "/isis:isis/isis:database/isis:levels/isis:lsp"
         + "/isis:router-capabilities/isis:router-capability" {
-    when "/rt:routing/rt:control-plane-protocols/"
-       + "rt:control-plane-protocol/"
-       + "rt:type = 'isis:isis'" {
+    when "derived-from-or-self(/rt:routing"
+       + "/rt:control-plane-protocols"
+       + "/rt:control-plane-protocol/rt:type, 'isis:isis')" {
       description
         "This augments the IS-IS routing protocol when used";
     }
@@ -371,9 +370,9 @@ module ietf-isis-flex-algo {
         + "/isis:isis/isis:database/isis:levels/isis:lsp"
         + "/isis:extended-ipv4-reachability/"
         + "isis:prefixes" {
-    when "/rt:routing/rt:control-plane-protocols/"
-       + "rt:control-plane-protocol/"
-       + "rt:type = 'isis:isis'" {
+    when "derived-from-or-self(/rt:routing"
+       + "/rt:control-plane-protocols"
+       + "/rt:control-plane-protocol/rt:type, 'isis:isis')" {
       description
         "This augments the IS-IS routing protocol when used";
     }
@@ -386,9 +385,9 @@ module ietf-isis-flex-algo {
         + "rt:control-plane-protocols/rt:control-plane-protocol"
         + "/isis:isis/isis:database/isis:levels/isis:lsp"
         + "/isis:mt-extended-ipv4-reachability/isis:prefixes" {
-    when "/rt:routing/rt:control-plane-protocols/"
-       + "rt:control-plane-protocol/"
-       + "rt:type = 'isis:isis'" {
+    when "derived-from-or-self(/rt:routing"
+       + "/rt:control-plane-protocols"
+       + "/rt:control-plane-protocol/rt:type, 'isis:isis')" {
       description
         "This augments the IS-IS routing protocol when used";
     }
@@ -401,9 +400,9 @@ module ietf-isis-flex-algo {
         + "rt:control-plane-protocols/rt:control-plane-protocol"
         + "/isis:isis/isis:database/isis:levels/isis:lsp"
         + "/isis:ipv6-reachability/isis:prefixes" {
-    when "/rt:routing/rt:control-plane-protocols/"
-       + "rt:control-plane-protocol/"
-       + "rt:type = 'isis:isis'" {
+    when "derived-from-or-self(/rt:routing"
+       + "/rt:control-plane-protocols"
+       + "/rt:control-plane-protocol/rt:type, 'isis:isis')" {
       description
         "This augments the IS-IS routing protocol when used";
     }
@@ -416,9 +415,9 @@ module ietf-isis-flex-algo {
         + "rt:control-plane-protocols/rt:control-plane-protocol"
         + "/isis:isis/isis:database/isis:levels/isis:lsp"
         + "/isis:mt-ipv6-reachability/isis:prefixes" {
-    when "/rt:routing/rt:control-plane-protocols/"
-       + "rt:control-plane-protocol/"
-       + "rt:type = 'isis:isis'" {
+    when "derived-from-or-self(/rt:routing"
+       + "/rt:control-plane-protocols"
+       + "/rt:control-plane-protocol/rt:type, 'isis:isis')" {
       description
         "This augments the IS-IS routing protocol when used";
     }
