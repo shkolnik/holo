@@ -30,7 +30,10 @@ impl NetworkVersion<Self> for Ospfv2 {
     type SocketAddr = SockaddrIn;
     type Pktinfo = libc::in_pktinfo;
 
-    fn socket(ifname: Option<&str>) -> Result<Socket, std::io::Error> {
+    fn socket(
+        ifname: Option<&str>,
+        priority: Option<u32>,
+    ) -> Result<Socket, std::io::Error> {
         #[cfg(not(feature = "testing"))]
         {
             use socket2::{Domain, Protocol, Type};
@@ -53,11 +56,18 @@ impl NetworkVersion<Self> for Ospfv2 {
             socket.set_multicast_ttl_v4(1)?;
             socket.set_ipv4_pktinfo(true)?;
             socket.set_tos_v4(libc::IPTOS_PREC_INTERNETCONTROL.into())?;
+            // After IP_TOS, never before: the kernel resets sk_priority
+            // whenever the TOS value changes. Priorities above 6 need
+            // CAP_NET_ADMIN, which holo has dropped by now.
+            if let Some(priority) = priority {
+                capabilities::raise(|| socket.set_priority(priority))?;
+            }
 
             Ok(socket)
         }
         #[cfg(feature = "testing")]
         {
+            let _ = priority;
             Ok(Socket {})
         }
     }

@@ -50,7 +50,12 @@ pub trait NetworkVersion<V: Version> {
     //
     // The socket may be bound to a specific network interface if `ifname` is
     // provided. Binding to an interface must not occur for virtual links.
-    fn socket(ifname: Option<&str>) -> Result<Socket, std::io::Error>;
+    // Creates the protocol socket. `priority` is the SO_PRIORITY the embedder
+    // asked for on control traffic; None leaves the socket priority untouched.
+    fn socket(
+        ifname: Option<&str>,
+        priority: Option<u32>,
+    ) -> Result<Socket, std::io::Error>;
 
     // Enable or disable checksum offloading.
     fn set_cksum_offloading(

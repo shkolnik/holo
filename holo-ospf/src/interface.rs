@@ -325,6 +325,7 @@ where
                 area,
                 instance.state.af,
                 &instance.state.auth_seqno,
+                instance.shared.control_priority,
                 instance.tx,
             ) {
                 Ok(net) => self.state.net = Some(net),
@@ -1020,6 +1021,7 @@ where
         area: &Area<V>,
         af: AddressFamily,
         auth_seqno: &Arc<AtomicU64>,
+        control_priority: Option<u32>,
         instance_channels_tx: &InstanceChannelsTx<Instance<V>>,
     ) -> Result<Self, IoError> {
         // Create raw socket.
@@ -1028,7 +1030,7 @@ where
         } else {
             Some(iface.name.as_ref())
         };
-        let socket = V::socket(ifname)
+        let socket = V::socket(ifname, control_priority)
             .map_err(IoError::SocketError)
             .and_then(|socket| {
                 AsyncFd::new(socket).map_err(IoError::SocketError)
