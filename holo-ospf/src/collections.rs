@@ -1290,3 +1290,117 @@ where
         }
     }
 }
+
+// ===== tests =====
+
+#[cfg(test)]
+mod tests {
+    use const_addrs::ip4;
+
+    use super::*;
+    use crate::neighbor::nsm;
+    use crate::version::Ospfv2;
+
+    // On an OSPFv2 broadcast interface a neighbor is keyed by its source
+    // address (RFC 2328 §10), so two entries on the same interface can carry
+    // the same Router ID while the sender's source address moves (an address
+    // change on the far end, or a restart that re-picks the primary address).
+    //
+    // The Hello packet's neighbor list is `Neighbors::router_ids()`
+    // (ospfv2/interface.rs, `generate_hello`), and it is snapshotted into the
+    // Hello Tx task only on insert/delete/DR change. Losing the survivor's
+    // `router_id_tree` entry therefore drops the neighbor from every Hello
+    // sent from then on, while the neighbor itself stays in the table.
+    type Nbrs = (Neighbors<Ospfv2>, Arena<Neighbor<Ospfv2>>);
+
+    fn empty() -> Nbrs {
+        (Default::default(), Default::default())
+    }
+
+    // The old entry for a Router ID times out after the same neighbor has
+    // re-appeared from a new source address: the survivor must stay in the
+    // Hello neighbor list.
+    #[test]
+    fn stale_duplicate_delete_keeps_survivor_in_hello_list() {
+        let (mut nbrs, mut arena) = empty();
+        let router_id = ip4!("10.249.0.1");
+
+        // The neighbor as first learned, from its old source address.
+        let (old_idx, _) =
+            nbrs.insert(&mut arena, router_id, ip4!("10.99.0.1"));
+
+        // The same neighbor re-appears from a new source address and reaches
+        // Full; the old entry is still waiting on its inactivity timer.
+        let (new_idx, nbr) =
+            nbrs.insert(&mut arena, router_id, ip4!("10.249.9.1"));
+        nbr.state = nsm::State::Full;
+
+        // The old entry's inactivity timer fires.
+        nbrs.delete(&mut arena, old_idx);
+
+        // The survivor is still in the neighbor table, still Full...
+        assert_eq!(arena[new_idx].state, nsm::State::Full);
+        assert!(
+            nbrs.get_by_net_id(&arena, ip4!("10.249.9.1").into())
+                .is_some(),
+            "the surviving neighbor must still be reachable by source address"
+        );
+
+        // ...so every Hello we send must keep listing it.
+        assert!(
+            nbrs.router_ids().any(|rid| rid == router_id),
+            "Hello neighbor list dropped {router_id}, which is still Full"
+        );
+    }
+
+    // Mirror image: the entry that survives is the one learned first, because
+    // a Hello from it re-pointed `router_id_tree` back at itself before the
+    // duplicate went away.
+    #[test]
+    fn duplicate_delete_keeps_survivor_that_reclaimed_the_router_id() {
+        let (mut nbrs, mut arena) = empty();
+        let router_id = ip4!("10.249.0.1");
+
+        let (keep_idx, nbr) =
+            nbrs.insert(&mut arena, router_id, ip4!("10.99.0.1"));
+        nbr.state = nsm::State::Full;
+        let (dup_idx, _) =
+            nbrs.insert(&mut arena, router_id, ip4!("10.249.9.1"));
+
+        // A Hello from the surviving neighbor: `get_neighbor` looks it up by
+        // source address and refreshes its Router ID (ospfv2/interface.rs).
+        let (idx, nbr) = nbrs
+            .get_mut_by_net_id(&mut arena, ip4!("10.99.0.1").into())
+            .expect("neighbor keyed by its own source address");
+        assert_eq!(idx, keep_idx);
+        nbrs.update_router_id(idx, nbr, router_id);
+
+        // The duplicate's inactivity timer fires.
+        nbrs.delete(&mut arena, dup_idx);
+
+        assert_eq!(arena[keep_idx].state, nsm::State::Full);
+        assert!(
+            nbrs.router_ids().any(|rid| rid == router_id),
+            "Hello neighbor list dropped {router_id}, which is still Full"
+        );
+    }
+
+    // A duplicate must not hide the neighbor it collides with: iteration over
+    // the table is what the ISM (DR election, AdjOk) and the northbound
+    // neighbor list both walk.
+    #[test]
+    fn duplicate_router_id_does_not_hide_the_first_neighbor() {
+        let (mut nbrs, mut arena) = empty();
+        let router_id = ip4!("10.249.0.1");
+
+        let (first_idx, _) =
+            nbrs.insert(&mut arena, router_id, ip4!("10.99.0.1"));
+        nbrs.insert(&mut arena, router_id, ip4!("10.249.9.1"));
+
+        assert!(
+            nbrs.iter(&arena).any(|nbr| nbr.src == ip4!("10.99.0.1")),
+            "neighbor {first_idx:?} vanished from the table when a second \
+             entry with the same Router ID was inserted"
+        );
+    }
+}
