@@ -31,7 +31,7 @@ use holo_utils::task::Task;
 use ipnetwork::IpNetwork;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Sender, UnboundedReceiver, UnboundedSender};
-use tracing::{debug_span, warn};
+use tracing::{debug, debug_span, warn};
 
 use crate::birt::Birt;
 use crate::interface::Interfaces;
@@ -238,9 +238,15 @@ pub fn start(
         // Forwarding is the embedder's policy (cfab scopes it per interface);
         // holo-routing never touches it.
 
-        // Set the maximum number of MPLS labels available for forwarding.
-        if let Err(error) = sysctl::mpls_platform_labels("1048575") {
-            warn!(%error, "failed to set MPLS platform labels");
+        // Set the maximum number of MPLS labels available for forwarding. A kernel without the
+        // mpls_router module has no such sysctl; that is the normal case for an embedder that
+        // never uses MPLS, so it is not a warning.
+        if std::path::Path::new("/proc/sys/net/mpls").exists() {
+            if let Err(error) = sysctl::mpls_platform_labels("1048575") {
+                warn!(%error, "failed to set MPLS platform labels");
+            }
+        } else {
+            debug!("MPLS not available in this kernel; platform labels left unset");
         }
 
         // Initialize netlink socket.
