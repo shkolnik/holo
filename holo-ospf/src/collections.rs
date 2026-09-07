@@ -820,8 +820,14 @@ where
 
     // Returns a reference to the neighbor corresponding to the given Router ID.
     //
-    // In the rare case of several neighbors sharing the same Router ID, the
-    // most recently linked one is returned.
+    // Should several neighbors share the same Router ID, the most recently
+    // linked one is returned (link order, not Hello activity: a Hello that
+    // confirms the Router ID a neighbor already holds doesn't relink it).
+    // Today that can't happen for the callers of this lookup: only neighbors
+    // identified by their address (OSPFv2 broadcast, NBMA and P2MP) can hold
+    // duplicate Router IDs, while Router ID lookups serve the paths where a
+    // neighbor is identified by its Router ID to begin with (OSPFv2
+    // point-to-point interfaces and virtual links, OSPFv3, SPF).
     pub(crate) fn get_by_router_id<'a>(
         &self,
         arena: &'a Arena<Neighbor<V>>,
@@ -837,8 +843,7 @@ where
     // Returns a mutable reference to the neighbor corresponding to the given
     // Router ID.
     //
-    // In the rare case of several neighbors sharing the same Router ID, the
-    // most recently linked one is returned.
+    // Duplicate Router IDs resolve the same way as in `get_by_router_id`.
     pub(crate) fn get_mut_by_router_id<'a>(
         &mut self,
         arena: &'a mut Arena<Neighbor<V>>,
@@ -1490,11 +1495,13 @@ mod tests {
         );
     }
 
-    // Mirror image: the entry that survives is the one learned first, because
-    // a Hello from it re-pointed `router_id_tree` back at itself before the
-    // duplicate went away.
+    // Every received packet reasserts the Router ID its sender is already known
+    // by (`get_neighbor` looks the neighbor up by source address and refreshes
+    // its Router ID, ospfv2/interface.rs). While a duplicate is outstanding
+    // that reassertion must leave both entries linked, so that whichever of the
+    // two times out first, the other keeps the Router ID in the Hello list.
     #[test]
-    fn duplicate_delete_keeps_survivor_that_reclaimed_the_router_id() {
+    fn confirming_hello_from_a_duplicate_leaves_both_linked() {
         let (mut nbrs, mut arena) = empty();
         let router_id = ip4!("10.249.0.1");
 
@@ -1504,13 +1511,18 @@ mod tests {
         let (dup_idx, _) =
             nbrs.insert(&mut arena, router_id, ip4!("10.249.9.1"));
 
-        // A Hello from the surviving neighbor: `get_neighbor` looks it up by
-        // source address and refreshes its Router ID (ospfv2/interface.rs).
+        // A Hello from the surviving neighbor.
         let (idx, nbr) = nbrs
             .get_mut_by_net_id(&mut arena, ip4!("10.99.0.1").into())
             .expect("neighbor keyed by its own source address");
         assert_eq!(idx, keep_idx);
         nbrs.update_router_id(idx, nbr, router_id);
+
+        assert_eq!(
+            nbrs.indexes().collect::<Vec<_>>(),
+            vec![keep_idx, dup_idx],
+            "confirming a Router ID must neither unlink nor relink a neighbor"
+        );
 
         // The duplicate's inactivity timer fires.
         nbrs.delete(&mut arena, dup_idx);

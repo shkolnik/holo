@@ -200,6 +200,7 @@ where
         // Update neighbor's last received sequence number.
         *nbr_auth_seqno = auth_seqno;
     }
+    sync_hello_tx_on_router_id_change(iface, area, instance);
 
     // Log received packet.
     if iface.config.trace_opts.packets_resolved.load().rx(pkt_type) {
@@ -221,6 +222,7 @@ where
         let (nbr_idx, nbr) =
             V::get_neighbor(iface, &src, router_id, &mut arenas.neighbors)
                 .ok_or(Error::UnknownNeighbor(src, router_id))?;
+        sync_hello_tx_on_router_id_change(iface, area, instance);
 
         match packet {
             Packet::Hello(_) => unreachable!(),
@@ -296,6 +298,25 @@ where
     ))
 }
 
+// Resynchronizes the interface's Hello Tx task if a neighbor changed its Router
+// ID in place.
+//
+// Insertions and deletions resynchronize the task where they happen. A Router
+// ID change does neither, but it does rewrite the Hello neighbor list, so it
+// has to be picked up wherever a received packet can carry one, which is every
+// `get_neighbor` call site.
+fn sync_hello_tx_on_router_id_change<V>(
+    iface: &mut Interface<V>,
+    area: &Area<V>,
+    instance: &InstanceUpView<'_, V>,
+) where
+    V: Version,
+{
+    if iface.state.neighbors.take_hello_list_changed() {
+        iface.sync_hello_tx(area, instance);
+    }
+}
+
 fn process_packet_hello<V>(
     iface: &mut Interface<V>,
     area: &Area<V>,
@@ -350,12 +371,7 @@ where
             }
         };
 
-    // Synchronize interface's Hello Tx task if a neighbor changed its Router
-    // ID in place (`get_neighbor` above, or an earlier non-Hello packet), since
-    // that rewrites the Hello neighbor list.
-    if iface.state.neighbors.take_hello_list_changed() {
-        iface.sync_hello_tx(area, instance);
-    }
+    sync_hello_tx_on_router_id_change(iface, area, instance);
 
     // Update neighbor's source address.
     //
@@ -971,6 +987,7 @@ where
                 .map(|(_, nbr)| nbr),
                 None => Some(nbr),
             };
+            sync_hello_tx_on_router_id_change(iface, area, instance);
 
             if let Some(nbr) = nbr {
                 gr::helper_process_grace_lsa(
