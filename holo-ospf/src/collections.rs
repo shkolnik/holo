@@ -696,14 +696,49 @@ where
 
         // OSPFv3 identifies neighbors on a multi-access network by their
         // Router ID, so the network ID moves with it.
-        if net_id != old_net_id {
-            if self.net_id_tree.get(&old_net_id) == Some(&nbr_idx) {
-                self.net_id_tree.remove(&old_net_id);
-            }
-            self.net_id_tree.insert(net_id, nbr_idx);
-        }
+        self.net_id_tree_rekey(nbr_idx, old_net_id, net_id);
 
         self.hello_list_changed = true;
+    }
+
+    // Updates the neighbor's source address, keeping the network ID tree in
+    // sync.
+    //
+    // OSPFv2 identifies neighbors on a multi-access network by their source
+    // address, so the network ID moves with it. Point-to-point interfaces and
+    // virtual links identify them by Router ID instead, which is the only case
+    // where a neighbor outlives a source address change.
+    pub(crate) fn update_src(
+        &mut self,
+        nbr_idx: NeighborIndex,
+        nbr: &mut Neighbor<V>,
+        src: V::NetIpAddr,
+    ) {
+        if nbr.src == src {
+            return;
+        }
+
+        let old_net_id = nbr.network_id();
+        nbr.src = src;
+        self.net_id_tree_rekey(nbr_idx, old_net_id, nbr.network_id());
+    }
+
+    // Moves a neighbor's network ID tree entry, leaving any entry that belongs
+    // to another neighbor alone.
+    fn net_id_tree_rekey(
+        &mut self,
+        nbr_idx: NeighborIndex,
+        old_net_id: NeighborNetId,
+        net_id: NeighborNetId,
+    ) {
+        if net_id == old_net_id {
+            return;
+        }
+
+        if self.net_id_tree.get(&old_net_id) == Some(&nbr_idx) {
+            self.net_id_tree.remove(&old_net_id);
+        }
+        self.net_id_tree.insert(net_id, nbr_idx);
     }
 
     // Returns whether the Hello neighbor list changed since the last call, and
@@ -1551,6 +1586,42 @@ mod tests {
         assert!(
             nbrs.get_by_router_id(&arena, ip4!("10.249.0.9"))
                 .is_some_and(|(idx, _)| idx == nbr_idx)
+        );
+    }
+
+    // On an OSPFv2 point-to-point interface a neighbor is identified by its
+    // Router ID, so it survives a source address change; the network ID tree
+    // is keyed by the source address and has to follow it. Left behind, the
+    // old key outlives the neighbor and points into a freed arena slot.
+    #[test]
+    fn source_address_change_rekeys_the_network_id_tree() {
+        let (mut nbrs, mut arena) = empty();
+        let router_id = ip4!("10.249.0.1");
+        let (nbr_idx, _) =
+            nbrs.insert(&mut arena, router_id, ip4!("10.99.0.1"));
+
+        let (idx, nbr) =
+            nbrs.get_mut_by_router_id(&mut arena, router_id).unwrap();
+        nbrs.update_src(idx, nbr, ip4!("10.99.0.2"));
+
+        assert!(
+            nbrs.get_by_net_id(&arena, ip4!("10.99.0.1").into())
+                .is_none(),
+            "the neighbor is still linked to the address it left"
+        );
+        assert!(
+            nbrs.get_by_net_id(&arena, ip4!("10.99.0.2").into())
+                .is_some_and(|(idx, _)| idx == nbr_idx)
+        );
+
+        nbrs.delete(&mut arena, nbr_idx);
+        assert!(
+            nbrs.get_by_net_id(&arena, ip4!("10.99.0.1").into())
+                .is_none()
+        );
+        assert!(
+            nbrs.get_by_net_id(&arena, ip4!("10.99.0.2").into())
+                .is_none()
         );
     }
 

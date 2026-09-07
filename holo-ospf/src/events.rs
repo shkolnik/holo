@@ -323,7 +323,7 @@ where
     )?;
 
     // Find or create new neighbor.
-    let (_, nbr) =
+    let (nbr_idx, nbr) =
         match V::get_neighbor(iface, &src, hello.router_id(), neighbors) {
             Some(value) => value,
             None => {
@@ -366,7 +366,7 @@ where
     // Once an address change occurs, the corresponding neighbor should
     // reoriginate its Router-LSA, so there's no need to reschedule SPF
     // manually in order to update the routing table.
-    nbr.src = src;
+    iface.state.neighbors.update_src(nbr_idx, nbr, src);
 
     // Trigger the HelloReceived event.
     nbr.fsm(iface, area, instance, lsa_entries, nsm::Event::HelloRcvd);
