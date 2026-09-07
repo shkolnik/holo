@@ -350,6 +350,13 @@ where
             }
         };
 
+    // Synchronize interface's Hello Tx task if a neighbor changed its Router
+    // ID in place (`get_neighbor` above, or an earlier non-Hello packet), since
+    // that rewrites the Hello neighbor list.
+    if iface.state.neighbors.take_hello_list_changed() {
+        iface.sync_hello_tx(area, instance);
+    }
+
     // Update neighbor's source address.
     //
     // For OSPFv2, this can only happen for point-to-point interfaces (for the

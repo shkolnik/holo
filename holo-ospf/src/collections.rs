@@ -12,6 +12,7 @@ use enum_as_inner::EnumAsInner;
 use generational_arena::Index;
 use holo_utils::task::IntervalTask;
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 
 use crate::area::Area;
 use crate::error::Error;
@@ -70,8 +71,17 @@ pub struct Interfaces<V: Version> {
 #[derive(Debug, Default)]
 pub struct Neighbors<V: Version> {
     id_tree: HashMap<NeighborId, NeighborIndex>,
-    router_id_tree: BTreeMap<Ipv4Addr, NeighborIndex>,
+    // Router IDs aren't unique among the neighbors of a single interface. On
+    // OSPFv2 broadcast, NBMA and point-to-multipoint networks a neighbor is
+    // identified by its source address (RFC 2328 - Section 10), so a peer that
+    // starts sending from a different address is a separate entry until the
+    // stale one's inactivity timer fires. Every entry sharing a Router ID is
+    // kept here, so removing one can never unlist a neighbor that is still up.
+    router_id_tree: BTreeMap<Ipv4Addr, Vec<NeighborIndex>>,
     net_id_tree: BTreeMap<NeighborNetId, NeighborIndex>,
+    // Set whenever a Router ID update changed the Hello neighbor list, which
+    // the Hello Tx task holds as a snapshot taken when the list last changed.
+    hello_list_changed: bool,
     next_id: NeighborId,
     _marker: std::marker::PhantomData<V>,
 }
@@ -631,9 +641,10 @@ where
         // Link neighbor to different collections.
         let nbr = &mut arena[nbr_idx];
         let nbr_net_id = nbr.network_id();
+        let nbr_router_id = nbr.router_id;
         self.id_tree.insert(nbr.id, nbr_idx);
-        self.router_id_tree.insert(nbr.router_id, nbr_idx);
         self.net_id_tree.insert(nbr_net_id, nbr_idx);
+        self.router_id_tree_link(nbr_router_id, nbr_net_id, nbr_idx);
 
         (nbr_idx, nbr)
     }
@@ -645,25 +656,102 @@ where
     ) {
         let nbr = &mut arena[nbr_idx];
         let nbr_net_id = nbr.network_id();
+        let nbr_router_id = nbr.router_id;
 
-        // Unlink neighbor from different collections.
+        // Unlink neighbor from different collections. The Router ID and
+        // network ID trees are only unlinked if they still point to this
+        // neighbor, so that a duplicate entry never unlists a live one.
         self.id_tree.remove(&nbr.id);
-        self.router_id_tree.remove(&nbr.router_id);
-        self.net_id_tree.remove(&nbr_net_id);
+        if self.net_id_tree.get(&nbr_net_id) == Some(&nbr_idx) {
+            self.net_id_tree.remove(&nbr_net_id);
+        }
+        self.router_id_tree_unlink(nbr_router_id, nbr_idx);
 
         // Remove neighbor from the arena.
         arena.0.remove(nbr_idx);
     }
 
+    // Updates the neighbor's Router ID, keeping the Router ID and network ID
+    // trees in sync.
+    //
+    // A Router ID change rewrites the Hello neighbor list, so it flags the list
+    // as changed for `take_hello_list_changed`.
     pub(crate) fn update_router_id(
         &mut self,
         nbr_idx: NeighborIndex,
         nbr: &mut Neighbor<V>,
         router_id: Ipv4Addr,
     ) {
-        self.router_id_tree.remove(&nbr.router_id);
+        // Nothing to do for the usual case of a neighbor confirming the Router
+        // ID it's already known by (every received packet does that).
+        if nbr.router_id == router_id {
+            return;
+        }
+
+        let old_net_id = nbr.network_id();
+        self.router_id_tree_unlink(nbr.router_id, nbr_idx);
         nbr.router_id = router_id;
-        self.router_id_tree.insert(nbr.router_id, nbr_idx);
+        let net_id = nbr.network_id();
+        self.router_id_tree_link(router_id, net_id, nbr_idx);
+
+        // OSPFv3 identifies neighbors on a multi-access network by their
+        // Router ID, so the network ID moves with it.
+        if net_id != old_net_id {
+            if self.net_id_tree.get(&old_net_id) == Some(&nbr_idx) {
+                self.net_id_tree.remove(&old_net_id);
+            }
+            self.net_id_tree.insert(net_id, nbr_idx);
+        }
+
+        self.hello_list_changed = true;
+    }
+
+    // Returns whether the Hello neighbor list changed since the last call, and
+    // clears the flag.
+    //
+    // Insertions and deletions resynchronize the Hello Tx task at their call
+    // sites; this covers the remaining case of a neighbor changing its Router
+    // ID in place.
+    pub(crate) fn take_hello_list_changed(&mut self) -> bool {
+        std::mem::take(&mut self.hello_list_changed)
+    }
+
+    // Links a neighbor to the Router ID tree, keeping any other neighbor that
+    // shares the same Router ID linked as well.
+    fn router_id_tree_link(
+        &mut self,
+        router_id: Ipv4Addr,
+        net_id: NeighborNetId,
+        nbr_idx: NeighborIndex,
+    ) {
+        let nbr_idxs = self.router_id_tree.entry(router_id).or_default();
+        if nbr_idxs.contains(&nbr_idx) {
+            return;
+        }
+        if !nbr_idxs.is_empty() {
+            warn!(
+                %router_id, neighbor = %net_id,
+                "duplicate neighbor Router ID on the same interface"
+            );
+        }
+
+        // The most recently linked neighbor goes last, as it's the one that
+        // spoke to us most recently.
+        nbr_idxs.push(nbr_idx);
+    }
+
+    // Unlinks a single neighbor from the Router ID tree.
+    fn router_id_tree_unlink(
+        &mut self,
+        router_id: Ipv4Addr,
+        nbr_idx: NeighborIndex,
+    ) {
+        if let Some(nbr_idxs) = self.router_id_tree.get_mut(&router_id) {
+            nbr_idxs.retain(|idx| *idx != nbr_idx);
+            if nbr_idxs.is_empty() {
+                self.router_id_tree.remove(&router_id);
+            }
+        }
     }
 
     // Returns a reference to the neighbor corresponding to the given ID.
@@ -696,6 +784,9 @@ where
     }
 
     // Returns a reference to the neighbor corresponding to the given Router ID.
+    //
+    // In the rare case of several neighbors sharing the same Router ID, the
+    // most recently linked one is returned.
     pub(crate) fn get_by_router_id<'a>(
         &self,
         arena: &'a Arena<Neighbor<V>>,
@@ -703,12 +794,16 @@ where
     ) -> Option<(NeighborIndex, &'a Neighbor<V>)> {
         self.router_id_tree
             .get(&router_id)
+            .and_then(|nbr_idxs| nbr_idxs.last())
             .copied()
             .map(|nbr_idx| (nbr_idx, &arena[nbr_idx]))
     }
 
     // Returns a mutable reference to the neighbor corresponding to the given
     // Router ID.
+    //
+    // In the rare case of several neighbors sharing the same Router ID, the
+    // most recently linked one is returned.
     pub(crate) fn get_mut_by_router_id<'a>(
         &mut self,
         arena: &'a mut Arena<Neighbor<V>>,
@@ -716,6 +811,7 @@ where
     ) -> Option<(NeighborIndex, &'a mut Neighbor<V>)> {
         self.router_id_tree
             .get(&router_id)
+            .and_then(|nbr_idxs| nbr_idxs.last())
             .copied()
             .map(move |nbr_idx| (nbr_idx, &mut arena[nbr_idx]))
     }
@@ -777,28 +873,34 @@ where
         }
     }
 
-    // Returns an iterator visiting all neighbors.
+    // Returns an iterator visiting all neighbors, including any that share a
+    // Router ID with another one.
     //
     // Neighbors are ordered by their Router IDs.
     pub(crate) fn iter<'a>(
         &'a self,
         arena: &'a Arena<Neighbor<V>>,
     ) -> impl Iterator<Item = &'a Neighbor<V>> + 'a {
-        self.router_id_tree.values().map(|nbr_idx| &arena[*nbr_idx])
+        self.indexes().map(|nbr_idx| &arena[nbr_idx])
     }
 
     // Returns an iterator over all neighbor Router IDs.
     //
-    // Neighbors are ordered by their Router IDs.
+    // This is the neighbor list carried in the Hello packets sent out of the
+    // interface, so every neighbor needs to be accounted for here: a Router ID
+    // missing from it tells the far end we haven't heard from it (1-Way).
+    //
+    // Router IDs are unique and ordered.
     pub(crate) fn router_ids(&self) -> impl Iterator<Item = Ipv4Addr> + '_ {
         self.router_id_tree.keys().copied()
     }
 
-    // Returns an iterator over all interface indexes.
+    // Returns an iterator over all neighbor indexes, including any that share
+    // a Router ID with another one.
     //
     // Neighbors are ordered by their Router IDs.
     pub(crate) fn indexes(&self) -> impl Iterator<Item = NeighborIndex> + '_ {
-        self.router_id_tree.values().copied()
+        self.router_id_tree.values().flatten().copied()
     }
 }
 
@@ -1382,6 +1484,73 @@ mod tests {
         assert!(
             nbrs.router_ids().any(|rid| rid == router_id),
             "Hello neighbor list dropped {router_id}, which is still Full"
+        );
+    }
+
+    // Mirror image of the first test: the entry that times out is the newer
+    // one (the peer moved back to its original source address), so the older
+    // entry is the survivor.
+    #[test]
+    fn duplicate_delete_of_the_newer_entry_keeps_the_older_survivor() {
+        let (mut nbrs, mut arena) = empty();
+        let router_id = ip4!("10.249.0.1");
+
+        let (keep_idx, nbr) =
+            nbrs.insert(&mut arena, router_id, ip4!("10.99.0.1"));
+        nbr.state = nsm::State::Full;
+        let (dup_idx, _) =
+            nbrs.insert(&mut arena, router_id, ip4!("10.249.9.1"));
+
+        nbrs.delete(&mut arena, dup_idx);
+
+        assert_eq!(arena[keep_idx].state, nsm::State::Full);
+        assert!(
+            nbrs.router_ids().any(|rid| rid == router_id),
+            "Hello neighbor list dropped {router_id}, which is still Full"
+        );
+        assert!(
+            nbrs.get_by_router_id(&arena, router_id)
+                .is_some_and(|(nbr_idx, _)| nbr_idx == keep_idx),
+            "the deleted duplicate is still linked to {router_id}"
+        );
+    }
+
+    // A neighbor that changes its Router ID in place rewrites the Hello
+    // neighbor list, which the Hello Tx task only re-reads when told to.
+    #[test]
+    fn router_id_change_resyncs_the_hello_list() {
+        let (mut nbrs, mut arena) = empty();
+        let src = ip4!("10.99.0.1");
+
+        let (nbr_idx, _) = nbrs.insert(&mut arena, ip4!("10.249.0.1"), src);
+        assert!(
+            !nbrs.take_hello_list_changed(),
+            "insert resynchronizes the Hello Tx task at its call site"
+        );
+
+        // Every received packet reasserts the Router ID the neighbor is
+        // already known by; that must not restart the Hello Tx task.
+        let (idx, nbr) =
+            nbrs.get_mut_by_net_id(&mut arena, src.into()).unwrap();
+        nbrs.update_router_id(idx, nbr, ip4!("10.249.0.1"));
+        assert!(!nbrs.take_hello_list_changed());
+
+        // An actual Router ID change does.
+        let (idx, nbr) =
+            nbrs.get_mut_by_net_id(&mut arena, src.into()).unwrap();
+        nbrs.update_router_id(idx, nbr, ip4!("10.249.0.9"));
+        assert!(nbrs.take_hello_list_changed());
+        assert!(!nbrs.take_hello_list_changed(), "the flag must be consumed");
+
+        // The old Router ID is gone from every view of the collection.
+        assert_eq!(
+            nbrs.router_ids().collect::<Vec<_>>(),
+            vec![ip4!("10.249.0.9")]
+        );
+        assert!(nbrs.get_by_router_id(&arena, ip4!("10.249.0.1")).is_none());
+        assert!(
+            nbrs.get_by_router_id(&arena, ip4!("10.249.0.9"))
+                .is_some_and(|(idx, _)| idx == nbr_idx)
         );
     }
 
