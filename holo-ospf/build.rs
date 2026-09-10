@@ -71,6 +71,13 @@ static TYPEDEFS: &[(&str, TypeSpec)] = &[
 // OSPF-specific YANG identity types.
 static IDENTITY_TYPES: &[(&str, TypeSpec)] = &[
     (
+        "control-plane-protocol",
+        TypeSpec {
+            rust_type: "Protocol",
+            copy_semantics: true,
+        },
+    ),
+    (
         "area-type",
         TypeSpec {
             rust_type: "AreaType",

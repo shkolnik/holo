@@ -1607,3 +1607,130 @@ async fn timeout_nbr1() {
 async fn timeout_nbr2() {
     run_test::<Instance<Ospfv2>>("timeout-nbr2", "topo1-2", "rt3").await;
 }
+
+// Test description:
+//
+// Input:
+//  * Northbound: configure redistribution of static routes
+// Output:
+//  * Ibus: subscribe to route redistribution for static routes (IPv4)
+//
+// Input:
+//  * Ibus: new redistributed route (172.16.1.0/24, metric 20)
+// Output:
+//  * Protocol: send an LS Update to all adjacencies containing the new
+//    AS-External-LSA and the reoriginated Router-LSA
+//  * Northbound:
+//    - the AS-External-LSA carries the route's metric, external metric type 2
+//      and a forwarding address of 0.0.0.0
+//    - the Router-LSA now has the "E" (ASBR) flag set
+//
+// Input:
+//  * Protocol: SPF delay timer expiration
+// Output:
+//  * Northbound: the local RIB has no route to 172.16.1.0/24, since a router
+//    ignores the AS-External-LSAs it originated itself
+//
+// Input:
+//  * Northbound: override the redistribution metric with 100
+// Output:
+//  * Protocol: send an LS Update containing the updated AS-External-LSA
+//  * Northbound: the AS-External-LSA carries metric 100
+//
+// Input:
+//  * Ibus: the redistributed route is removed
+// Output:
+//  * Protocol: send an LS Update containing the MaxAge AS-External-LSA and the
+//    reoriginated Router-LSA
+//  * Northbound:
+//    - the AS-External-LSA is at MaxAge
+//    - the Router-LSA no longer has the "E" flag set
+#[tokio::test]
+async fn ibus_route_redist1() {
+    run_test::<Instance<Ospfv2>>("ibus-route-redist1", "topo2-1", "rt6").await;
+}
+
+// Test description:
+//
+// Input:
+//  * Protocol: received an LS Update from rt1 containing rt6's Router-LSA with
+//    the "E" (ASBR) flag set, and an AS-External-LSA from rt6 for
+//    172.16.1.0/24 with external metric type 2 and metric 20
+// Output:
+//  * Protocol: flood both LSAs and send an LS Ack to rt1
+//  * Northbound: both LSAs are present in the LSDB
+//
+// Input:
+//  * Protocol: SPF delay timer expiration
+// Output:
+//  * Northbound: the local RIB has an "external-2" route to 172.16.1.0/24
+//    whose next hops are the ones towards rt6
+//  * Ibus: install the route to 172.16.1.0/24
+#[tokio::test]
+async fn packet_lsupd_as_external1() {
+    run_test::<Instance<Ospfv2>>("packet-lsupd-as-external1", "topo2-1", "rt3")
+        .await;
+}
+
+// Test description:
+//
+// Input:
+//  * Northbound: configure redistribution of static routes
+// Output:
+//  * Ibus: subscribe to route redistribution for static routes (IPv4)
+//
+// Input:
+//  * Ibus: new redistributed route (172.16.1.0/24, metric 20)
+// Output:
+//  * Protocol: send an LS Update containing the new AS-External-LSA and the
+//    reoriginated Router-LSA
+//
+// Input:
+//  * Protocol: received a newer copy of our own AS-External-LSA for
+//    172.16.1.0/24, advertising a different metric
+// Output:
+//  * Protocol: reoriginate the AS-External-LSA with the metric of the
+//    redistributed route and a higher sequence number
+//
+// Input:
+//  * Protocol: received an AS-External-LSA advertised by us for a prefix that
+//    is not being redistributed (172.16.2.0/24)
+// Output:
+//  * Protocol: flush it (reflood at MaxAge)
+#[tokio::test]
+async fn packet_lsupd_self_orig_as_external1() {
+    run_test::<Instance<Ospfv2>>(
+        "packet-lsupd-self-orig-as-external1",
+        "topo2-1",
+        "rt6",
+    )
+    .await;
+}
+
+// Test description:
+//
+// Input:
+//  * Northbound: configure redistribution of static routes
+// Output:
+//  * Ibus: subscribe to route redistribution for static routes (IPv4)
+//
+// Input:
+//  * Northbound: disable the OSPF instance
+// Output:
+//  * Northbound: the instance is inactive
+//
+// Input:
+//  * Ibus: new redistributed route (172.16.1.0/24, metric 20) while the
+//    instance is down
+// Output:
+//  * Nothing: the route is remembered, but there is no LSDB to originate into
+//
+// Input:
+//  * Northbound: reenable the OSPF instance
+// Output:
+//  * Northbound: the AS-External-LSA for 172.16.1.0/24 is originated, so a
+//    route redistributed while the instance was down is not lost
+#[tokio::test]
+async fn ibus_route_redist2() {
+    run_test::<Instance<Ospfv2>>("ibus-route-redist2", "topo2-1", "rt6").await;
+}

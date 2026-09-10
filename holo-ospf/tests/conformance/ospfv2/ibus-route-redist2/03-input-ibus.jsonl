@@ -1,0 +1,1 @@
+{"RouteRedistributeAdd":{"protocol":"static","prefix":"172.16.1.0/24","distance":1,"metric":20,"tag":null,"nexthops":[{"Interface":{"ifindex":1}}]}}

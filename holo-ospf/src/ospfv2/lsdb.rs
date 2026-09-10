@@ -21,7 +21,7 @@ use crate::collections::{
 };
 use crate::debug::LsaFlushReason;
 use crate::error::Error;
-use crate::instance::{InstanceArenas, InstanceUpView};
+use crate::instance::{InstanceArenas, InstanceUpView, RedistributedRoute};
 use crate::interface::{Interface, InterfaceType, ism};
 use crate::lsdb::{
     self, LsaEntry, LsaOriginateEvent, LsdbVersion, MAX_LINK_METRIC,
@@ -32,7 +32,8 @@ use crate::ospfv2::packet::iana::{
     LsaTypeCode, Options,
 };
 use crate::ospfv2::packet::lsa::{
-    LsaBody, LsaHdr, LsaNetwork, LsaRouter, LsaRouterLink, LsaSummary, LsaType,
+    LsaAsExternal, LsaAsExternalFlags, LsaBody, LsaHdr, LsaNetwork, LsaRouter,
+    LsaRouterLink, LsaSummary, LsaType,
 };
 use crate::ospfv2::packet::lsa_opaque::{
     ExtLinkTlv, ExtPrefixRouteType, ExtPrefixTlv, LsaExtLink, LsaExtPrefix,
@@ -295,6 +296,16 @@ impl LsdbVersion<Self> for Ospfv2 {
                     lsa_orig_router_info(area, instance);
                 }
             }
+            LsaOriginateEvent::RedistributeChange => {
+                // (Re)originate or flush AS-External-LSA(s).
+                lsa_orig_as_external_all(instance, arenas);
+
+                // (Re)originate Router-LSA in all areas, since the router's
+                // ASBR status might have changed.
+                for area in arenas.areas.iter() {
+                    lsa_orig_router(area, instance, arenas);
+                }
+            }
             _ => (),
         };
 
@@ -436,6 +447,9 @@ fn lsa_orig_router(
     let mut flags = LsaRouterFlags::empty();
     if arenas.areas.is_abr(&arenas.interfaces) {
         flags.insert(LsaRouterFlags::B);
+    }
+    if is_asbr(instance) {
+        flags.insert(LsaRouterFlags::E);
     }
     if lsdb::router_lsa_v_bit(area, arenas) {
         flags.insert(LsaRouterFlags::V);
@@ -623,6 +637,107 @@ fn lsa_orig_network(
         lsa_id,
         lsa_body,
     );
+}
+
+// Returns true if this router is an AS boundary router, i.e. if it advertises
+// at least one AS-External-LSA.
+fn is_asbr(instance: &InstanceUpView<'_, Ospfv2>) -> bool {
+    instance
+        .system
+        .redistribute
+        .keys()
+        .any(|prefix| matches!(prefix, IpNetwork::V4(_)))
+}
+
+// (Re)originates one AS-External-LSA per redistributed prefix, and flushes the
+// self-originated ones whose prefix is no longer redistributed.
+fn lsa_orig_as_external_all(
+    instance: &InstanceUpView<'_, Ospfv2>,
+    arenas: &InstanceArenas<Ospfv2>,
+) {
+    for (prefix, route) in &instance.system.redistribute {
+        let IpNetwork::V4(prefix) = prefix else {
+            continue;
+        };
+        lsa_orig_as_external(*prefix, route, instance);
+    }
+
+    // Flush the LSAs left over from prefixes that are gone. Reoriginating an
+    // unchanged LSA is a no-op (RFC 2328, Section 12.4), so walking the whole
+    // set on every change is cheap.
+    for (_, lse) in instance.state.lsdb.iter_by_type_advrtr(
+        &arenas.lsa_entries,
+        LsaTypeCode::AsExternal.into(),
+        instance.state.router_id,
+    ) {
+        let LsaBody::AsExternal(lsa_body) = &lse.data.body else {
+            continue;
+        };
+        let prefix = as_external_prefix(lse.data.hdr.lsa_id, lsa_body.mask);
+        if prefix
+            .map(|prefix| {
+                instance.system.redistribute.contains_key(&prefix.into())
+            })
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        lsa_flush(instance, LsdbId::As, lse.id);
+    }
+}
+
+// (Re)originates the AS-External-LSA advertising the given redistributed
+// prefix.
+fn lsa_orig_as_external(
+    prefix: Ipv4Network,
+    route: &RedistributedRoute,
+    instance: &InstanceUpView<'_, Ospfv2>,
+) {
+    // The metric configured on the redistribute entry overrides the metric of
+    // the route itself.
+    let metric = instance
+        .config
+        .redistribution
+        .get(&route.protocol)
+        .and_then(|cfg| cfg.metric)
+        .unwrap_or(route.metric)
+        .min(lsdb::LSA_INFINITY);
+
+    // TODO: implement Appendix E's algorithm for assigning Link State IDs.
+    // Until then, two redistributed prefixes with the same network address and
+    // different masks collide.
+    let lsa_id = prefix.ip();
+
+    let lsa_body = LsaBody::AsExternal(LsaAsExternal {
+        mask: prefix.mask(),
+        // External metric type 2: the metric is not comparable with the OSPF
+        // internal path cost, so a receiver keeps it as the primary metric.
+        flags: LsaAsExternalFlags::E,
+        metric,
+        // Nothing to hand off to: the redistributing router is the way out.
+        fwd_addr: None,
+        tag: route.tag.unwrap_or(0),
+    });
+
+    // AS-External-LSAs are only flooded into normal areas, whose Options
+    // always carry the E-bit.
+    instance.tx.protocol_input.lsa_orig_check(
+        LsdbId::As,
+        Some(Options::E),
+        lsa_id,
+        lsa_body,
+    );
+}
+
+// Recovers the prefix an AS-External-LSA advertises from its Link State ID and
+// network mask.
+fn as_external_prefix(lsa_id: Ipv4Addr, mask: Ipv4Addr) -> Option<Ipv4Network> {
+    let plen = u32::from(mask).leading_ones() as u8;
+    // Reject a non-contiguous mask, which would make the prefix ambiguous.
+    if u32::from(mask) != u32::MAX.checked_shl(32 - plen as u32).unwrap_or(0) {
+        return None;
+    }
+    Ipv4Network::new(lsa_id, plen).ok()
 }
 
 fn lsa_flush_network(
@@ -1028,9 +1143,27 @@ fn process_self_originated_lsa(
             // once SPF runs and the routing table is computed.
         }
         Some(LsaTypeCode::AsExternal) => {
-            // Flush AS-External-LSA (redistribution of local routes isn't
-            // supported at the moment).
-            flush = true;
+            // Reoriginate the AS-External-LSA if its prefix is still being
+            // redistributed; flush it otherwise.
+            let route = lsa
+                .body
+                .as_as_external()
+                .and_then(|lsa_body| {
+                    as_external_prefix(lsa.hdr.lsa_id, lsa_body.mask)
+                })
+                .and_then(|prefix| {
+                    instance
+                        .system
+                        .redistribute
+                        .get(&prefix.into())
+                        .map(|route| (prefix, route))
+                });
+            match route {
+                Some((prefix, route)) => {
+                    lsa_orig_as_external(prefix, route, instance);
+                }
+                None => flush = true,
+            }
         }
         Some(
             LsaTypeCode::OpaqueLink

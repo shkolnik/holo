@@ -1,0 +1,1 @@
+{"RouteIpAdd":{"protocol":"ospfv2","prefix":"172.16.1.0/24","distance":110,"metric":20,"tag":0,"nexthops":[{"Address":{"ifindex":5,"addr":"10.0.4.5","labels":[]}},{"Address":{"ifindex":7,"addr":"10.0.5.5","labels":[]}}]}}

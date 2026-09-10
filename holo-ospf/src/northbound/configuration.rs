@@ -71,6 +71,9 @@ pub enum Event {
     BierEnableChange(bool),
     NodeTagsChange,
     UpdateTraceOptions,
+    RedistributeAdd(Protocol),
+    RedistributeDelete(Protocol),
+    RedistributeChange,
 }
 
 // ===== configuration structs =====
@@ -95,6 +98,13 @@ pub struct InstanceCfg {
     pub instance_id: u8,
     pub bier: BierOspfCfg,
     pub trace_opts: InstanceTraceOptions,
+    pub redistribution: BTreeMap<Protocol, RedistributionCfg>,
+}
+
+#[derive(Debug, Default)]
+pub struct RedistributionCfg {
+    // Metric to advertise, overriding the redistributed route's own metric.
+    pub metric: Option<u32>,
 }
 
 #[derive(Debug)]
@@ -353,6 +363,36 @@ where
         }
         ConfigChange::TraceOptionsFlag(keys, change) => {
             apply_trace_options(instance, keys.name, change, event_queue)?;
+        }
+        ConfigChange::Redistribution(keys, change) => {
+            apply_redistribution(instance, keys.r#type, change, event_queue)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn apply_redistribution<V>(instance: &mut Instance<V>, protocol: Protocol, change: config::RedistributionChange, event_queue: &mut BTreeSet<Event>) -> Result<(), ApplyError>
+where
+    V: Version,
+{
+    match change {
+        config::RedistributionChange::Create => {
+            instance.config.redistribution.insert(protocol, Default::default());
+            event_queue.insert(Event::RedistributeAdd(protocol));
+        }
+        config::RedistributionChange::Delete => {
+            instance.config.redistribution.remove(&protocol);
+            event_queue.insert(Event::RedistributeDelete(protocol));
+        }
+        config::RedistributionChange::Entry(change) => {
+            let cfg = instance.config.redistribution.get_mut(&protocol).ok_or(ApplyError::EntryNotFound)?;
+            match change {
+                config::RedistributionEntryChange::Metric(metric) => {
+                    cfg.metric = metric;
+                    event_queue.insert(Event::RedistributeChange);
+                }
+            }
         }
     }
 
@@ -1163,6 +1203,29 @@ where
                 }
             }
         }
+        Event::RedistributeAdd(protocol) => {
+            // Subscribe to route redistribution for the given protocol. The
+            // RIB replays its active routes of that protocol on subscription.
+            let af = V::address_family(instance);
+            instance.tx.ibus.route_redistribute_sub(protocol, Some(af));
+        }
+        Event::RedistributeDelete(protocol) => {
+            let af = V::address_family(instance);
+            instance.tx.ibus.route_redistribute_unsub(protocol, Some(af));
+
+            // Discard the routes learned through that subscription; the
+            // AS-External-LSAs advertising them are flushed below.
+            instance.system.redistribute.retain(|_, route| route.protocol != protocol);
+
+            if let Some((instance, arenas)) = instance.as_up() {
+                let _ = V::lsa_orig_event(&instance, arenas, LsaOriginateEvent::RedistributeChange);
+            }
+        }
+        Event::RedistributeChange => {
+            if let Some((instance, arenas)) = instance.as_up() {
+                let _ = V::lsa_orig_event(&instance, arenas, LsaOriginateEvent::RedistributeChange);
+            }
+        }
     }
 }
 
@@ -1277,6 +1340,7 @@ impl Default for InstanceCfg {
             instance_id,
             bier: Default::default(),
             trace_opts: Default::default(),
+            redistribution: Default::default(),
         }
     }
 }

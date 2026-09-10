@@ -28,6 +28,7 @@ pub trait NorthboundVersion<V: Version> {
 pub mod yang_gen {
     use holo_utils::crypto::CryptoAlgo;
     use holo_utils::ip::AddressFamily;
+    use holo_utils::protocol::Protocol;
     use holo_utils::southbound::OspfRouteType;
     use holo_utils::sr::IgpAlgoType;
     pub use routing::control_plane_protocols::control_plane_protocol::ospf;

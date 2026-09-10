@@ -1,0 +1,26 @@
+{
+  "ietf-routing:routing": {
+    "@": {
+      "yang:operation": "none"
+    },
+    "control-plane-protocols": {
+      "control-plane-protocol": [
+        {
+          "type": "ietf-ospf:ospfv2",
+          "name": "test",
+          "ietf-ospf:ospf": {
+            "holo-ospf:redistribution": [
+              {
+                "type": "ietf-routing:static",
+                "metric": 100,
+                "@metric": {
+                  "yang:operation": "create"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

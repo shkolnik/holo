@@ -136,6 +136,7 @@ pub enum LsaOriginateEvent {
     },
     HostnameChange,
     NodeTagsChange,
+    RedistributeChange,
 }
 
 #[derive(Debug)]

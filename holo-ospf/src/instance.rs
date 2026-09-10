@@ -18,6 +18,7 @@ use holo_utils::ibus::IbusMsg;
 use holo_utils::ip::AddressFamily;
 use holo_utils::protocol::Protocol;
 use holo_utils::task::{TimeoutTask, protocol_select};
+use ipnetwork::IpNetwork;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender};
 
@@ -65,6 +66,17 @@ pub struct Instance<V: Version> {
 #[derive(Debug, Default)]
 pub struct InstanceSys {
     pub router_id: Option<Ipv4Addr>,
+    // Routes redistributed from the global RIB, keyed by prefix.
+    pub redistribute: BTreeMap<IpNetwork, RedistributedRoute>,
+}
+
+// Route redistributed from the global RIB, to be advertised in an
+// AS-External-LSA.
+#[derive(Clone, Debug)]
+pub struct RedistributedRoute {
+    pub protocol: Protocol,
+    pub metric: u32,
+    pub tag: Option<u32>,
 }
 
 #[derive(Debug)]
@@ -252,6 +264,15 @@ where
             instance.tx.protocol_input.lsa_orig_event(
                 LsaOriginateEvent::AreaStart { area_id: area.id },
             );
+        }
+
+        // Originate AS-External-LSA(s) for routes redistributed while the
+        // instance was inactive. The redistributed set lives outside the
+        // instance state, so it survives a restart.
+        if !self.system.redistribute.is_empty() {
+            self.tx
+                .protocol_input
+                .lsa_orig_event(LsaOriginateEvent::RedistributeChange);
         }
 
         // Update boot count in non-volatile storage.
@@ -789,6 +810,14 @@ where
         }
         IbusMsg::HostnameUpdate(hostname) => {
             ibus::rx::process_hostname_update(instance, hostname)?;
+        }
+        // Route redistribute update notification.
+        IbusMsg::RouteRedistributeAdd(msg) => {
+            ibus::rx::process_route_redistribute_add(instance, msg);
+        }
+        // Route redistribute delete notification.
+        IbusMsg::RouteRedistributeDel(msg) => {
+            ibus::rx::process_route_redistribute_del(instance, msg);
         }
         // Ignore other events.
         _ => {}

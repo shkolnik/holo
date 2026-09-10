@@ -8,12 +8,14 @@ use std::net::Ipv4Addr;
 
 use holo_utils::bfd;
 use holo_utils::bier::BierCfgEvent;
-use holo_utils::ip::IpNetworkKind;
-use holo_utils::southbound::{AddressFlags, AddressMsg, InterfaceUpdateMsg};
+use holo_utils::ip::{IpNetworkExt, IpNetworkKind};
+use holo_utils::southbound::{
+    AddressFlags, AddressMsg, InterfaceUpdateMsg, RouteKeyMsg, RouteMsg,
+};
 use holo_utils::sr::SrCfgEvent;
 
 use crate::error::Error;
-use crate::instance::Instance;
+use crate::instance::{Instance, RedistributedRoute};
 use crate::interface::Interface;
 use crate::lsdb::LsaOriginateEvent;
 use crate::neighbor::nsm;
@@ -320,4 +322,73 @@ where
     }
 
     Ok(())
+}
+
+pub(crate) fn process_route_redistribute_add<V>(
+    instance: &mut Instance<V>,
+    msg: RouteMsg,
+) where
+    V: Version,
+{
+    let prefix = msg.prefix;
+    if !IpNetworkExt::is_routable(&prefix) {
+        return;
+    }
+
+    // The RIB may still be replaying routes of a protocol whose subscription
+    // was just removed, and it feeds every address family the instance asked
+    // for; keep only what this instance advertises.
+    if prefix.address_family() != V::address_family(instance)
+        || !instance.config.redistribution.contains_key(&msg.protocol)
+    {
+        return;
+    }
+
+    instance.system.redistribute.insert(
+        prefix,
+        RedistributedRoute {
+            protocol: msg.protocol,
+            metric: msg.metric,
+            tag: msg.tag,
+        },
+    );
+
+    // (Re)originate the AS-External-LSA for this prefix.
+    if let Some((instance, arenas)) = instance.as_up() {
+        let _ = V::lsa_orig_event(
+            &instance,
+            arenas,
+            LsaOriginateEvent::RedistributeChange,
+        );
+    }
+}
+
+pub(crate) fn process_route_redistribute_del<V>(
+    instance: &mut Instance<V>,
+    msg: RouteKeyMsg,
+) where
+    V: Version,
+{
+    // Remove the route only if it is the one being advertised: the RIB sends
+    // a delete per protocol, and a prefix redistributed from two protocols is
+    // held here once.
+    let prefix = msg.prefix;
+    if instance
+        .system
+        .redistribute
+        .get(&prefix)
+        .is_none_or(|route| route.protocol != msg.protocol)
+    {
+        return;
+    }
+    instance.system.redistribute.remove(&prefix);
+
+    // Flush the AS-External-LSA for this prefix.
+    if let Some((instance, arenas)) = instance.as_up() {
+        let _ = V::lsa_orig_event(
+            &instance,
+            arenas,
+            LsaOriginateEvent::RedistributeChange,
+        );
+    }
 }

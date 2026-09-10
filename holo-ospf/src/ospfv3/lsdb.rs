@@ -321,6 +321,13 @@ impl LsdbVersion<Self> for Ospfv3 {
                     lsa_orig_router_info(area, instance);
                 }
             }
+            LsaOriginateEvent::RedistributeChange => {
+                // TODO: originate AS-External-LSAs for redistributed routes.
+                // Unreachable today: the `redistribution` configuration list
+                // is restricted to OSPFv2 instances by a YANG "when"
+                // statement, so no OSPFv2-only fork behavior can be enabled
+                // here by accident.
+            }
             LsaOriginateEvent::BierEnableChange => {
                 // Reoriginate Intra-area-prefix-LSA(s) in all areas.
                 for area in arenas.areas.iter() {

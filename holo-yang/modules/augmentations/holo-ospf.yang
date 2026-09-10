@@ -251,6 +251,45 @@ module holo-ospf {
   }
 
   augment "/rt:routing/rt:control-plane-protocols/"
+        + "rt:control-plane-protocol/ospf:ospf" {
+    when "derived-from-or-self(../rt:type, "
+       + "'ospf:ospfv2')" {
+      description
+        "This augmentation is only valid for OSPFv2.  AS-External-LSA
+         origination is not implemented for OSPFv3 yet, and accepting
+         the configuration there would silently redistribute nothing.";
+    }
+    description
+      "OSPFv2 protocol instance-level augmentations";
+
+    list redistribution {
+      key "type";
+      description
+        "Routes of the listed protocols are redistributed into this OSPF
+         instance, each as an AS-External-LSA (type 5) with external
+         metric type 2 and a forwarding address of 0.0.0.0.";
+
+      leaf type {
+        type identityref {
+          base rt:control-plane-protocol;
+        }
+        description
+          "Type of the control-plane protocol -- an identity
+           derived from the 'control-plane-protocol'
+           base identity.";
+      }
+      leaf metric {
+        type uint32 {
+          range "0..16777214";
+        }
+        description
+          "Metric advertised in the AS-External-LSA.  When absent, the
+           metric of the redistributed route is used.";
+      }
+    }
+  }
+
+  augment "/rt:routing/rt:control-plane-protocols/"
         + "rt:control-plane-protocol/ospf:ospf/ospf:areas/ospf:area/"
         + "ospf:interfaces/ospf:interface" {
     container trace-options {
