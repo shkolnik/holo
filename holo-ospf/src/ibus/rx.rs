@@ -407,3 +407,115 @@ pub(crate) fn process_route_redistribute_del<V>(
         );
     }
 }
+
+#[cfg(all(test, feature = "testing"))]
+mod tests {
+    use holo_protocol::{InstanceChannelsTx, ProtocolInstance};
+    use holo_utils::ibus::ibus_channels;
+    use holo_utils::protocol::Protocol;
+    use holo_utils::southbound::RouteOpaqueAttrs;
+    use ipnetwork::IpNetwork;
+    use tokio::sync::mpsc;
+
+    use super::*;
+    use crate::version::Ospfv2;
+
+    // Builds a down OSPFv2 instance that redistributes static routes only and
+    // already advertises `prefix`, learned from `held`.
+    fn test_instance(prefix: IpNetwork, held: Protocol) -> Instance<Ospfv2> {
+        let (nb_tx, _nb_rx) = mpsc::unbounded_channel();
+        let (ibus_tx, _ibus_rx) = ibus_channels();
+        let (protocol_input_tx, _protocol_input_rx) =
+            Instance::<Ospfv2>::protocol_input_channels();
+        let (protocol_output_tx, _protocol_output_rx) = mpsc::channel(4);
+        let tx = InstanceChannelsTx::new(
+            nb_tx,
+            ibus_tx,
+            protocol_input_tx,
+            protocol_output_tx,
+        );
+        let mut instance =
+            Instance::<Ospfv2>::new("test".to_owned(), Default::default(), tx);
+
+        instance
+            .config
+            .redistribution
+            .insert(Protocol::STATIC, Default::default());
+        instance.system.redistribute.insert(
+            prefix,
+            RedistributedRoute {
+                protocol: held,
+                metric: 10,
+                tag: None,
+            },
+        );
+        instance
+    }
+
+    fn route_msg(prefix: IpNetwork, protocol: Protocol) -> RouteMsg {
+        RouteMsg {
+            protocol,
+            kind: holo_utils::southbound::RouteKind::Unicast,
+            prefix,
+            distance: 110,
+            metric: 10,
+            tag: None,
+            opaque_attrs: RouteOpaqueAttrs::None,
+            nexthops: vec![],
+        }
+    }
+
+    // The RIB only ever advertises the best route for a prefix. An add
+    // carrying a protocol this instance does not redistribute therefore means
+    // the route it advertises has been superseded, and the instance must stop
+    // advertising it rather than ignore the message.
+    #[test]
+    fn redistribute_add_of_an_unredistributed_protocol_withdraws() {
+        let prefix: IpNetwork = "10.249.0.1/32".parse().unwrap();
+        let mut instance = test_instance(prefix, Protocol::STATIC);
+
+        process_route_redistribute_add(
+            &mut instance,
+            route_msg(prefix, Protocol::OSPFV2),
+        );
+
+        assert!(
+            !instance.system.redistribute.contains_key(&prefix),
+            "superseded route must no longer be advertised"
+        );
+    }
+
+    // A prefix this instance does not advertise must not be affected.
+    #[test]
+    fn redistribute_add_of_an_unredistributed_protocol_adds_nothing() {
+        let prefix: IpNetwork = "10.249.0.1/32".parse().unwrap();
+        let other: IpNetwork = "10.249.0.2/32".parse().unwrap();
+        let mut instance = test_instance(prefix, Protocol::STATIC);
+
+        process_route_redistribute_add(
+            &mut instance,
+            route_msg(other, Protocol::OSPFV2),
+        );
+
+        assert!(!instance.system.redistribute.contains_key(&other));
+        assert_eq!(instance.system.redistribute.len(), 1);
+    }
+
+    // An add for a redistributed protocol is still stored.
+    #[test]
+    fn redistribute_add_of_a_redistributed_protocol_is_stored() {
+        let prefix: IpNetwork = "10.249.0.1/32".parse().unwrap();
+        let other: IpNetwork = "10.249.0.2/32".parse().unwrap();
+        let mut instance = test_instance(prefix, Protocol::STATIC);
+
+        process_route_redistribute_add(
+            &mut instance,
+            route_msg(other, Protocol::STATIC),
+        );
+
+        assert_eq!(
+            instance.system.redistribute[&other].protocol,
+            Protocol::STATIC
+        );
+    }
+}
