@@ -192,7 +192,19 @@ pub(crate) fn process_route_del(instance: &mut Instance, msg: RouteKeyMsg) {
         })
         .collect::<Vec<_>>()
     {
+        // Remove the route only if it is the one being advertised: the RIB
+        // sends a delete per protocol, and a prefix redistributed from two
+        // protocols is held here once. When the best route for a prefix
+        // changes protocol, the RIB sends an add for the new protocol
+        // followed by a delete for the old one; an unconditional remove would
+        // drop the entry the add just installed.
         let routes = instance.system.routes.get_mut(level);
+        if routes
+            .get(&prefix)
+            .is_none_or(|route| route.protocol != msg.protocol)
+        {
+            continue;
+        }
         routes.remove(&prefix);
 
         // Schedule LSP reorigination.
@@ -334,5 +346,112 @@ pub(crate) fn process_msd_update(
     // Schedule LSP reorigination.
     if let Some((mut instance, _)) = instance.as_up() {
         instance.schedule_lsp_origination(instance.config.level_type);
+    }
+}
+
+#[cfg(all(test, feature = "testing"))]
+mod tests {
+    use holo_protocol::{InstanceChannelsTx, ProtocolInstance};
+    use holo_utils::ibus::ibus_channels;
+    use holo_utils::ip::AddressFamily;
+    use holo_utils::protocol::Protocol;
+    use holo_utils::southbound::RouteOpaqueAttrs;
+    use ipnetwork::IpNetwork;
+    use tokio::sync::mpsc;
+
+    use super::*;
+    use crate::northbound::configuration::{
+        AddressFamilyCfg, RedistributionCfg,
+    };
+    use crate::packet::LevelNumber;
+
+    // Builds an instance whose IPv4 address family redistributes both static
+    // and OSPFv2 routes at level 2, holding one redistributed route for
+    // `prefix` learned from `protocol`.
+    fn test_instance(prefix: IpNetwork, protocol: Protocol) -> Instance {
+        let (nb_tx, _nb_rx) = mpsc::unbounded_channel();
+        let (ibus_tx, _ibus_rx) = ibus_channels();
+        let (protocol_input_tx, _protocol_input_rx) =
+            Instance::protocol_input_channels();
+        let (protocol_output_tx, _protocol_output_rx) = mpsc::channel(4);
+        let tx = InstanceChannelsTx::new(
+            nb_tx,
+            ibus_tx,
+            protocol_input_tx,
+            protocol_output_tx,
+        );
+        let mut instance =
+            Instance::new("test".to_owned(), Default::default(), tx);
+
+        instance.config.level_type = LevelType::L2;
+        let mut af_cfg = AddressFamilyCfg::default();
+        for protocol in [Protocol::STATIC, Protocol::OSPFV2] {
+            af_cfg
+                .redistribution
+                .insert((LevelNumber::L2, protocol), RedistributionCfg {});
+        }
+        instance.config.afs.insert(AddressFamily::Ipv4, af_cfg);
+
+        instance.system.routes.get_mut(LevelNumber::L2).insert(
+            prefix,
+            RouteSys {
+                protocol,
+                metric: 10,
+                tag: None,
+                opaque_attrs: RouteOpaqueAttrs::None,
+            },
+        );
+        instance
+    }
+
+    // The RIB sends a redistribute delete per protocol, but a prefix is held
+    // here once. When the best route for a prefix changes protocol the RIB
+    // sends an add for the new protocol followed by a delete for the old one;
+    // a delete that ignored the protocol would drop the entry the add just
+    // installed and withdraw the prefix from the LSP.
+    #[test]
+    fn route_del_of_another_protocol_keeps_the_route() {
+        let prefix: IpNetwork = "10.249.0.1/32".parse().unwrap();
+        let mut instance = test_instance(prefix, Protocol::OSPFV2);
+
+        process_route_del(
+            &mut instance,
+            RouteKeyMsg {
+                protocol: Protocol::STATIC,
+                prefix,
+            },
+        );
+
+        let route = instance
+            .system
+            .routes
+            .get(LevelNumber::L2)
+            .get(&prefix)
+            .expect("route of another protocol must not be removed");
+        assert_eq!(route.protocol, Protocol::OSPFV2);
+    }
+
+    // The guard must not stop the delete that does own the route.
+    #[test]
+    fn route_del_of_the_advertised_protocol_removes_the_route() {
+        let prefix: IpNetwork = "10.249.0.1/32".parse().unwrap();
+        let mut instance = test_instance(prefix, Protocol::OSPFV2);
+
+        process_route_del(
+            &mut instance,
+            RouteKeyMsg {
+                protocol: Protocol::OSPFV2,
+                prefix,
+            },
+        );
+
+        assert!(
+            instance
+                .system
+                .routes
+                .get(LevelNumber::L2)
+                .get(&prefix)
+                .is_none()
+        );
     }
 }
