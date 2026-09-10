@@ -92,15 +92,22 @@ impl Rib {
     pub(crate) fn ip_route_add(&mut self, msg: RouteMsg, owner: IbusClientId) {
         let nexthops = self.resolve_nexthops(msg.nexthops);
         let rib_prefix = self.prefix_entry(msg.prefix);
+        // A prefix holds one entry per (distance, protocol). Keying on the
+        // distance alone would let two protocols that happen to share one
+        // collapse into a single entry carrying the first protocol's label and
+        // the second's nexthops, after which `ip_route_del` deletes the wrong
+        // one. The list stays sorted by distance so the best route is at index
+        // 0; among equal distances the protocol only breaks the tie
+        // deterministically.
         match rib_prefix
-            .binary_search_by_key(&msg.distance, |route| route.distance)
-        {
+            .binary_search_by_key(&(msg.distance, msg.protocol), |route| {
+                (route.distance, route.protocol)
+            }) {
             Ok(idx) => {
                 // Update the existing IP route with the new information.
                 let route = &mut rib_prefix[idx];
                 route.owner = owner;
                 route.kind = msg.kind;
-                route.distance = msg.distance;
                 route.metric = msg.metric;
                 route.tag = msg.tag;
                 route.opaque_attrs = msg.opaque_attrs;
@@ -137,14 +144,19 @@ impl Rib {
     pub(crate) fn ip_route_del(&mut self, msg: RouteKeyMsg) {
         let rib_prefix = self.prefix_entry(msg.prefix);
 
-        // Find IP route entry from the same advertising protocol.
-        if let Some(route) = rib_prefix
+        // Mark every entry advertised by that protocol as removed. The
+        // withdrawal carries no distance, so it withdraws all of the
+        // protocol's entries for the prefix, not just the first one.
+        let mut found = false;
+        for route in rib_prefix
             .iter_mut()
-            .find(|route| route.protocol == msg.protocol)
+            .filter(|route| route.protocol == msg.protocol)
         {
-            // Mark IP route as removed.
             route.flags.insert(RouteFlags::REMOVED);
+            found = true;
+        }
 
+        if found {
             // Add IP route to the update queue.
             self.ip_update_queue_add(msg.prefix);
         }
@@ -631,5 +643,184 @@ impl Route {
         for nh in self.nexthops.iter_mut() {
             nh.remove_labels();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use holo_utils::southbound::RouteOpaqueAttrs;
+    use netlink_packet_route::route::RouteAttribute;
+    use tokio::sync::mpsc;
+
+    use super::*;
+    use crate::netlink::NetlinkRequest;
+
+    const PREFIX: &str = "10.0.1.0/24";
+
+    // A netlink request, reduced to what these tests assert on.
+    #[derive(Debug, Eq, PartialEq)]
+    enum Req {
+        Install(u32),
+        Delete(u32),
+    }
+
+    fn prefix() -> IpNetwork {
+        PREFIX.parse().unwrap()
+    }
+
+    fn route_msg(protocol: Protocol, distance: u32, ifindex: u32) -> RouteMsg {
+        RouteMsg {
+            protocol,
+            kind: RouteKind::Unicast,
+            prefix: prefix(),
+            distance,
+            metric: 0,
+            tag: None,
+            opaque_attrs: RouteOpaqueAttrs::None,
+            nexthops: vec![Nexthop::Interface { ifindex }],
+        }
+    }
+
+    fn priority_of(msg: &netlink_packet_route::route::RouteMessage) -> u32 {
+        msg.attributes
+            .iter()
+            .find_map(|attr| match attr {
+                RouteAttribute::Priority(priority) => Some(*priority),
+                _ => None,
+            })
+            .expect("netlink request carries no RTA_PRIORITY")
+    }
+
+    // Drives the update queue and returns the netlink requests it emitted, in
+    // the order they were enqueued.
+    fn drain(
+        rib: &mut Rib,
+        netlink_rx: &mut mpsc::UnboundedReceiver<NetlinkRequest>,
+        netlink_tx: &UnboundedSender<NetlinkRequest>,
+    ) -> Vec<Req> {
+        rib.process_rib_update_queue(
+            &Interfaces::default(),
+            netlink_tx,
+            &FibPolicy::default(),
+        );
+        let mut reqs = vec![];
+        while let Ok(req) = netlink_rx.try_recv() {
+            match req {
+                NetlinkRequest::RouteAdd(msg) => {
+                    reqs.push(Req::Install(priority_of(&msg)))
+                }
+                NetlinkRequest::RouteDel(msg) => {
+                    reqs.push(Req::Delete(priority_of(&msg)))
+                }
+            }
+        }
+        reqs
+    }
+
+    fn test_rib() -> (
+        Rib,
+        mpsc::UnboundedSender<NetlinkRequest>,
+        mpsc::UnboundedReceiver<NetlinkRequest>,
+    ) {
+        let (update_queue_tx, _update_queue_rx) = mpsc::unbounded_channel();
+        let (netlink_tx, netlink_rx) = mpsc::unbounded_channel();
+        (Rib::new(update_queue_tx), netlink_tx, netlink_rx)
+    }
+
+    // A better route taking over must be installed before the old one is
+    // deleted: the two occupy different kernel priorities, so a delete-first
+    // order would leave the prefix unreachable in between.
+    #[test]
+    fn rib_update_installs_new_best_before_deleting_old() {
+        let (mut rib, netlink_tx, mut netlink_rx) = test_rib();
+
+        rib.ip_route_add(route_msg(Protocol::OSPFV2, 110, 2), 0);
+        assert_eq!(
+            drain(&mut rib, &mut netlink_rx, &netlink_tx),
+            vec![Req::Install(110)]
+        );
+
+        rib.ip_route_add(route_msg(Protocol::STATIC, 1, 3), 0);
+        assert_eq!(
+            drain(&mut rib, &mut netlink_rx, &netlink_tx),
+            vec![Req::Install(1), Req::Delete(110)]
+        );
+    }
+
+    // Two protocols at the same distance replace each other in the kernel
+    // through NLM_F_REPLACE, so the newly installed route must not be deleted
+    // right after being installed.
+    #[test]
+    fn rib_update_same_distance_does_not_delete_new_best() {
+        let (mut rib, netlink_tx, mut netlink_rx) = test_rib();
+
+        rib.ip_route_add(route_msg(Protocol::OSPFV2, 110, 2), 0);
+        assert_eq!(
+            drain(&mut rib, &mut netlink_rx, &netlink_tx),
+            vec![Req::Install(110)]
+        );
+
+        // ISIS sorts before OSPFv2 at an equal distance, so it becomes the
+        // new best route.
+        rib.ip_route_add(route_msg(Protocol::ISIS, 110, 3), 0);
+        assert_eq!(
+            drain(&mut rib, &mut netlink_rx, &netlink_tx),
+            vec![Req::Install(110)]
+        );
+    }
+
+    // The delete must carry the priority the route was installed with, not the
+    // priority of whatever replaced it: RTM_DELROUTE matches on it.
+    #[test]
+    fn rib_update_delete_carries_installed_priority() {
+        let (mut rib, netlink_tx, mut netlink_rx) = test_rib();
+
+        rib.ip_route_add(route_msg(Protocol::OSPFV2, 110, 2), 0);
+        assert_eq!(
+            drain(&mut rib, &mut netlink_rx, &netlink_tx),
+            vec![Req::Install(110)]
+        );
+
+        rib.ip_route_del(RouteKeyMsg {
+            protocol: Protocol::OSPFV2,
+            prefix: prefix(),
+        });
+        assert_eq!(
+            drain(&mut rib, &mut netlink_rx, &netlink_tx),
+            vec![Req::Delete(110)]
+        );
+    }
+
+    // Two protocols advertising one prefix at the same administrative distance
+    // are distinct RIB entries: keying on the distance alone made the second
+    // one overwrite the first's nexthops while keeping its protocol label, and
+    // withdrawing either then removed the wrong route.
+    #[test]
+    fn rib_two_protocols_at_one_distance_are_distinct_entries() {
+        let (mut rib, netlink_tx, mut netlink_rx) = test_rib();
+
+        rib.ip_route_add(route_msg(Protocol::ISIS, 110, 2), 0);
+        rib.ip_route_add(route_msg(Protocol::OSPFV2, 110, 3), 0);
+        drain(&mut rib, &mut netlink_rx, &netlink_tx);
+
+        let entries = rib.ip.get(&prefix()).expect("prefix missing from RIB");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].protocol, Protocol::ISIS);
+        assert_eq!(entries[0].nexthops[0], Nexthop::Interface { ifindex: 2 });
+        assert_eq!(entries[1].protocol, Protocol::OSPFV2);
+        assert_eq!(entries[1].nexthops[0], Nexthop::Interface { ifindex: 3 });
+
+        // Withdrawing IS-IS must leave the OSPFv2 route behind.
+        rib.ip_route_del(RouteKeyMsg {
+            protocol: Protocol::ISIS,
+            prefix: prefix(),
+        });
+        drain(&mut rib, &mut netlink_rx, &netlink_tx);
+
+        let entries = rib.ip.get(&prefix()).expect("prefix missing from RIB");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].protocol, Protocol::OSPFV2);
+        assert_eq!(entries[0].nexthops[0], Nexthop::Interface { ifindex: 3 });
+        assert!(entries[0].flags.contains(RouteFlags::ACTIVE));
     }
 }
