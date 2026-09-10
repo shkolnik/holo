@@ -770,6 +770,111 @@ mod tests {
         assert_eq!(route.attrs.base.value.med, Some(0));
     }
 
+    // A prefix has one redistribute slot, but the RIB sends a redistribute
+    // delete per protocol. When the best route for a prefix changes hands the
+    // RIB sends an add for the new protocol followed by a delete for the old
+    // one, and the add is applied asynchronously (it goes through the import
+    // policy) while the delete is not: a delete that ignored the origin would
+    // drop the new route and flap the prefix to every peer.
+    #[tokio::test]
+    async fn redistribute_del_of_another_protocol_keeps_the_route() {
+        use std::time::Instant;
+
+        use holo_utils::bgp::RouteType;
+        use holo_utils::southbound::RouteKeyMsg;
+        use ipnetwork::IpNetwork;
+
+        use crate::northbound::configuration::InstanceAfiSafiCfg;
+        use crate::packet::attribute::Attrs;
+        use crate::rib::{Redistribute, RouteOrigin};
+
+        let (tx, _guards) = test_instance_channels();
+        let shared = InstanceShared::default();
+        let mut instance = Instance::new("test".to_owned(), shared, tx);
+
+        // Redistribute both static and OSPFv2 routes into IPv4 unicast.
+        let prefix: IpNetwork = "10.249.0.1/32".parse().unwrap();
+        let mut afi_safi_cfg = InstanceAfiSafiCfg::default();
+        afi_safi_cfg.enabled = true;
+        for protocol in [Protocol::STATIC, Protocol::OSPFV2] {
+            afi_safi_cfg
+                .redistribution
+                .insert(protocol, Default::default());
+        }
+        instance
+            .config
+            .afi_safi
+            .insert(AfiSafi::Ipv4Unicast, afi_safi_cfg);
+        instance.system.router_id = Some(Ipv4Addr::new(10, 249, 0, 1));
+        instance.update();
+
+        let IpNetwork::V4(prefix_v4) = prefix else {
+            unreachable!()
+        };
+
+        // The prefix is redistributed from OSPFv2.
+        let state = instance.state.as_mut().expect("instance should be up");
+        let attrs = state.rib.attr_sets.get_route_attr_sets(&Attrs::default());
+        let dest = state
+            .rib
+            .tables
+            .ipv4_unicast
+            .prefixes
+            .entry(prefix_v4)
+            .or_default();
+        dest.redistribute = Some(Box::new(Redistribute {
+            origin: RouteOrigin::Protocol(Protocol::OSPFV2),
+            route_type: RouteType::Internal,
+            attrs,
+            last_modified: Instant::now(),
+            selection: Default::default(),
+        }));
+
+        // A withdrawal from the static protocol must leave it alone.
+        ibus::rx::process_route_del(
+            &mut instance,
+            RouteKeyMsg {
+                protocol: Protocol::STATIC,
+                prefix,
+            },
+        );
+        let dest = instance
+            .state
+            .as_ref()
+            .unwrap()
+            .rib
+            .tables
+            .ipv4_unicast
+            .prefixes
+            .get(&prefix_v4)
+            .expect("prefix must still be in the RIB");
+        let route = dest
+            .redistribute
+            .as_ref()
+            .expect("route of another protocol must not be removed");
+        assert_eq!(route.origin, RouteOrigin::Protocol(Protocol::OSPFV2));
+
+        // The owning protocol's withdrawal must still land.
+        ibus::rx::process_route_del(
+            &mut instance,
+            RouteKeyMsg {
+                protocol: Protocol::OSPFV2,
+                prefix,
+            },
+        );
+        let dest = instance
+            .state
+            .as_ref()
+            .unwrap()
+            .rib
+            .tables
+            .ipv4_unicast
+            .prefixes
+            .get(&prefix_v4)
+            .expect("prefix must still be in the RIB");
+        assert!(dest.redistribute.is_none());
+    }
+
     // A prefix that is BOTH network-originated (MED 0) and independently
     // redistributed from another protocol (a route at a higher MED) must keep
     // both routes as Decision-Process candidates, and best-path must select the

@@ -173,7 +173,20 @@ fn process_route_del_af<A>(
     let table = A::table(&mut rib.tables);
     let dest = table.prefixes.entry(prefix).or_default();
 
-    // Remove redistributed route.
+    // Remove the redistributed route, but only if it is the one this protocol
+    // installed: the RIB sends a delete per protocol, while a prefix has a
+    // single redistribute slot here. When the best route for a prefix changes
+    // hands, the RIB sends an add for the new protocol followed by a delete
+    // for the old one, and the add is applied asynchronously (it goes through
+    // the import policy) while the delete is not; an unconditional removal
+    // would therefore drop the new route and flap the prefix to every peer.
+    if dest
+        .redistribute
+        .as_ref()
+        .is_some_and(|route| route.origin != RouteOrigin::Protocol(protocol))
+    {
+        return;
+    }
     dest.redistribute = None;
 
     // Enqueue prefix and schedule the BGP Decision Process.
