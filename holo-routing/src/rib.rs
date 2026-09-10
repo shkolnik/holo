@@ -320,21 +320,25 @@ impl Rib {
         while let Some(prefix) = self.ip_update_queue.pop_first() {
             let rib_prefix = self.ip.entry(prefix).or_default();
 
-            // Find the protocol of the old best route, if one exists.
-            let old_best_protocol = rib_prefix
+            // Find the protocol and administrative distance of the old best
+            // route, if one exists. The distance is the kernel priority the
+            // route was installed with, so it is needed to delete it.
+            let old_best = rib_prefix
                 .iter()
                 .find(|route| route.flags.contains(RouteFlags::ACTIVE))
-                .map(|route| route.protocol);
+                .map(|route| (route.protocol, route.distance));
 
             // Remove routes marked with the REMOVED flag.
             rib_prefix
                 .retain(|route| !route.flags.contains(RouteFlags::REMOVED));
 
             // Select and (re)install the best route for this prefix.
+            let mut new_best = None;
             for (idx, route) in rib_prefix.iter_mut().enumerate() {
                 if idx == 0 {
                     // Mark the route as the preferred one.
                     route.flags.insert(RouteFlags::ACTIVE);
+                    new_best = Some((route.protocol, route.distance));
 
                     // Install the route using the netlink handle.
                     if route.protocol != Protocol::DIRECT {
@@ -353,22 +357,51 @@ impl Rib {
                 }
             }
 
-            // Check if there are no routes left for this prefix.
-            if rib_prefix.is_empty() {
-                if let Some(protocol) = old_best_protocol {
-                    // Uninstall the old best route using the netlink handle.
-                    if protocol != Protocol::DIRECT {
+            match (old_best, new_best) {
+                (
+                    Some((old_protocol, old_distance)),
+                    Some((_, new_distance)),
+                ) if old_distance != new_distance => {
+                    // The new best route was installed at a different kernel
+                    // priority, so NLM_F_REPLACE did not overwrite the old
+                    // one: it has to be deleted explicitly. Done after the
+                    // install so the prefix is never unreachable.
+                    if old_protocol != Protocol::DIRECT {
                         netlink::ip_route_uninstall(
-                            netlink_tx, &prefix, protocol, policy,
+                            netlink_tx,
+                            &prefix,
+                            old_protocol,
+                            old_distance,
+                            policy,
+                        );
+                    }
+                }
+                (Some((old_protocol, old_distance)), None) => {
+                    // Uninstall the old best route using the netlink handle.
+                    if old_protocol != Protocol::DIRECT {
+                        netlink::ip_route_uninstall(
+                            netlink_tx,
+                            &prefix,
+                            old_protocol,
+                            old_distance,
+                            policy,
                         );
                     }
 
                     // Notify protocol instances about the deleted route.
                     for sub in self.subscriptions.values() {
-                        ibus::notify_redistribute_del(sub, prefix, protocol);
+                        ibus::notify_redistribute_del(
+                            sub,
+                            prefix,
+                            old_protocol,
+                        );
                     }
                 }
+                _ => {}
+            }
 
+            // Check if there are no routes left for this prefix.
+            if rib_prefix.is_empty() {
                 // Remove prefix entry from the RIB.
                 self.ip.remove(&prefix);
             }
@@ -519,6 +552,7 @@ impl Rib {
                     netlink_tx,
                     &prefix,
                     route.protocol,
+                    route.distance,
                     policy,
                 );
             }

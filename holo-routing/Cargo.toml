@@ -39,6 +39,10 @@ holo-ldp = { path = "../holo-ldp", optional = true }
 holo-ospf = { path = "../holo-ospf", optional = true }
 holo-rip = { path = "../holo-rip", optional = true }
 
+[dev-dependencies]
+# Test binaries link libyang; the bundled build supplies it, as in holo-ospf.
+yang5 = { workspace = true, features = ["bundled"] }
+
 [build-dependencies]
 yang5 = { workspace = true, features = ["bundled"] }
 holo-northbound = { path = "../holo-northbound", features = ["routing"] }

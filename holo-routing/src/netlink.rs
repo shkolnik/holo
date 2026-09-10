@@ -65,6 +65,14 @@ impl NetlinkRequest {
 
 // ===== global functions =====
 
+// Installs an IP route in the kernel.
+//
+// The route carries RTA_PRIORITY set to the route's administrative distance
+// (the convention FRR uses). Without it every route Holo installs lands at
+// metric 0, and since routes are added with NLM_F_REPLACE the kernel replaces
+// any same-prefix route that is also at metric 0 - including a connected or an
+// operator-installed one. Two routes for the same prefix coexist in a kernel
+// table only if they differ in priority; the lowest priority wins.
 pub(crate) fn ip_route_install(
     netlink_tx: &UnboundedSender<NetlinkRequest>,
     prefix: &IpNetwork,
@@ -89,7 +97,8 @@ pub(crate) fn ip_route_install(
             RouteKind::Unreachable => RouteType::Unreachable,
             RouteKind::Prohibit => RouteType::Prohibit,
         })
-        .multipath(nexthops);
+        .multipath(nexthops)
+        .priority(route.distance);
     if let Some(addr) = policy.prefsrc_for(prefix) {
         msg = msg.pref_source(addr).unwrap();
     }
@@ -99,10 +108,16 @@ pub(crate) fn ip_route_install(
     netlink_tx.send(NetlinkRequest::RouteAdd(msg)).unwrap();
 }
 
+// Uninstalls an IP route from the kernel.
+//
+// `distance` must be the same value used at install time: RTM_DELROUTE matches
+// on the priority when the request carries one, so a delete without it would
+// only match a route sitting at metric 0.
 pub(crate) fn ip_route_uninstall(
     netlink_tx: &UnboundedSender<NetlinkRequest>,
     prefix: &IpNetwork,
     protocol: Protocol,
+    distance: u32,
     policy: &FibPolicy,
 ) {
     // Create netlink message.
@@ -112,6 +127,7 @@ pub(crate) fn ip_route_uninstall(
         .unwrap()
         .protocol(protocol)
         .kind(RouteType::Unspec)
+        .priority(distance)
         .build();
 
     // Enqueue netlink request.
@@ -324,7 +340,82 @@ fn netlink_label_stack(labels: &[Label]) -> Vec<MplsLabel> {
 
 #[cfg(test)]
 mod tests {
+    use chrono::Utc;
+    use netlink_packet_route::route::RouteAttribute;
+    use tokio::sync::mpsc;
+
     use super::*;
+    use crate::rib::RouteFlags;
+
+    fn test_route(distance: u32) -> Route {
+        Route {
+            protocol: Protocol::OSPFV2,
+            owner: 0,
+            kind: RouteKind::Unicast,
+            distance,
+            metric: 10,
+            tag: None,
+            opaque_attrs: holo_utils::southbound::RouteOpaqueAttrs::None,
+            nexthops: [Nexthop::Interface { ifindex: 2 }].into(),
+            last_updated: Utc::now(),
+            flags: RouteFlags::empty(),
+        }
+    }
+
+    fn priority_of(msg: &RouteMessage) -> Option<u32> {
+        msg.attributes.iter().find_map(|attr| match attr {
+            RouteAttribute::Priority(priority) => Some(*priority),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn ip_route_install_carries_distance_as_priority() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let prefix: IpNetwork = "10.0.1.0/24".parse().unwrap();
+        let interfaces = Interfaces::default();
+        let policy = FibPolicy::default();
+
+        ip_route_install(&tx, &prefix, &test_route(110), &interfaces, &policy);
+
+        let Some(NetlinkRequest::RouteAdd(msg)) = rx.try_recv().ok() else {
+            panic!("expected a RouteAdd request");
+        };
+        assert_eq!(priority_of(&msg), Some(110));
+    }
+
+    #[test]
+    fn ip_route_uninstall_carries_distance_as_priority() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let prefix: IpNetwork = "10.0.1.0/24".parse().unwrap();
+        let policy = FibPolicy::default();
+
+        ip_route_uninstall(&tx, &prefix, Protocol::OSPFV2, 110, &policy);
+
+        let Some(NetlinkRequest::RouteDel(msg)) = rx.try_recv().ok() else {
+            panic!("expected a RouteDel request");
+        };
+        assert_eq!(priority_of(&msg), Some(110));
+    }
+
+    #[test]
+    fn ip_route_install_priority_differs_per_distance() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let prefix: IpNetwork = "10.0.1.0/24".parse().unwrap();
+        let interfaces = Interfaces::default();
+        let policy = FibPolicy::default();
+
+        // A connected route sits at priority 0; anything Holo learns must not
+        // land there, or NLM_F_REPLACE would overwrite it.
+        ip_route_install(&tx, &prefix, &test_route(20), &interfaces, &policy);
+        ip_route_install(&tx, &prefix, &test_route(110), &interfaces, &policy);
+
+        let mut priorities = vec![];
+        while let Ok(NetlinkRequest::RouteAdd(msg)) = rx.try_recv() {
+            priorities.push(priority_of(&msg));
+        }
+        assert_eq!(priorities, vec![Some(20), Some(110)]);
+    }
 
     #[test]
     fn netlink_protocol_private_range() {
