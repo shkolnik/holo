@@ -335,12 +335,27 @@ pub(crate) fn process_route_redistribute_add<V>(
         return;
     }
 
+    // The RIB feeds every address family the instance asked for.
+    if prefix.address_family() != V::address_family(instance) {
+        return;
+    }
+
     // The RIB may still be replaying routes of a protocol whose subscription
-    // was just removed, and it feeds every address family the instance asked
-    // for; keep only what this instance advertises.
-    if prefix.address_family() != V::address_family(instance)
-        || !instance.config.redistribution.contains_key(&msg.protocol)
-    {
+    // was just removed; keep only what this instance advertises. The RIB only
+    // advertises the best route for a prefix, so an add for a protocol this
+    // instance does not redistribute means the route it holds for the prefix
+    // has been superseded: withdraw it. The RIB sends an explicit delete for
+    // the superseded protocol as well; this is the belt-and-braces half.
+    if !instance.config.redistribution.contains_key(&msg.protocol) {
+        if instance.system.redistribute.remove(&prefix).is_some()
+            && let Some((instance, arenas)) = instance.as_up()
+        {
+            let _ = V::lsa_orig_event(
+                &instance,
+                arenas,
+                LsaOriginateEvent::RedistributeChange,
+            );
+        }
         return;
     }
 

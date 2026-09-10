@@ -372,13 +372,16 @@ impl Rib {
             match (old_best, new_best) {
                 (
                     Some((old_protocol, old_distance)),
-                    Some((_, new_distance)),
-                ) if old_distance != new_distance => {
-                    // The new best route was installed at a different kernel
-                    // priority, so NLM_F_REPLACE did not overwrite the old
-                    // one: it has to be deleted explicitly. Done after the
-                    // install so the prefix is never unreachable.
-                    if old_protocol != Protocol::DIRECT {
+                    Some((new_protocol, new_distance)),
+                ) => {
+                    if old_distance != new_distance
+                        && old_protocol != Protocol::DIRECT
+                    {
+                        // The new best route was installed at a different
+                        // kernel priority, so NLM_F_REPLACE did not overwrite
+                        // the old one: it has to be deleted explicitly. Done
+                        // after the install so the prefix is never
+                        // unreachable.
                         netlink::ip_route_uninstall(
                             netlink_tx,
                             &prefix,
@@ -386,6 +389,27 @@ impl Rib {
                             old_distance,
                             policy,
                         );
+                    }
+
+                    if old_protocol != new_protocol {
+                        // The prefix changed hands. Subscribers that
+                        // redistribute the old protocol but not the new one
+                        // get no add above, so without this delete they keep
+                        // advertising the prefix indefinitely.
+                        //
+                        // Sent after the add: the delete is qualified by
+                        // protocol, so a subscriber that redistributes both
+                        // protocols ignores it and keeps the entry the add
+                        // just installed. Sending it first would make every
+                        // change of protocol a withdraw followed by a
+                        // readvertisement.
+                        for sub in self.subscriptions.values() {
+                            ibus::notify_redistribute_del(
+                                sub,
+                                prefix,
+                                old_protocol,
+                            );
+                        }
                     }
                 }
                 (Some((old_protocol, old_distance)), None) => {
@@ -648,6 +672,7 @@ impl Route {
 
 #[cfg(test)]
 mod tests {
+    use holo_utils::ibus::IbusMsg;
     use holo_utils::southbound::RouteOpaqueAttrs;
     use netlink_packet_route::route::RouteAttribute;
     use tokio::sync::mpsc;
@@ -662,6 +687,13 @@ mod tests {
     enum Req {
         Install(u32),
         Delete(u32),
+    }
+
+    // A redistribution notification, reduced to what these tests assert on.
+    #[derive(Debug, Eq, PartialEq)]
+    enum Redist {
+        Add(Protocol),
+        Del(Protocol),
     }
 
     fn prefix() -> IpNetwork {
@@ -715,6 +747,42 @@ mod tests {
             }
         }
         reqs
+    }
+
+    // Registers a redistribution subscription for the given IPv4 protocols
+    // and returns the receiving end of its ibus channel.
+    fn subscribe(
+        rib: &mut Rib,
+        protocols: &[Protocol],
+    ) -> mpsc::UnboundedReceiver<IbusMsg> {
+        let (ibus_tx, ibus_rx) = mpsc::unbounded_channel();
+        let protocols = protocols
+            .iter()
+            .map(|protocol| (AddressFamily::Ipv4, *protocol))
+            .collect();
+        rib.subscriptions
+            .insert(0, RedistributeSub::new(protocols, ibus_tx));
+        ibus_rx
+    }
+
+    // Returns the redistribution notifications sent to a subscription, in the
+    // order they were sent.
+    fn drain_ibus(
+        ibus_rx: &mut mpsc::UnboundedReceiver<IbusMsg>,
+    ) -> Vec<Redist> {
+        let mut msgs = vec![];
+        while let Ok(msg) = ibus_rx.try_recv() {
+            match msg {
+                IbusMsg::RouteRedistributeAdd(msg) => {
+                    msgs.push(Redist::Add(msg.protocol))
+                }
+                IbusMsg::RouteRedistributeDel(msg) => {
+                    msgs.push(Redist::Del(msg.protocol))
+                }
+                _ => {}
+            }
+        }
+        msgs
     }
 
     fn test_rib() -> (
@@ -822,5 +890,80 @@ mod tests {
         assert_eq!(entries[0].protocol, Protocol::OSPFV2);
         assert_eq!(entries[0].nexthops[0], Nexthop::Interface { ifindex: 3 });
         assert!(entries[0].flags.contains(RouteFlags::ACTIVE));
+    }
+
+    // A subscriber that redistributes only the old best route's protocol gets
+    // nothing when the new best route belongs to another protocol, so without
+    // an explicit delete it keeps advertising the prefix forever. Observed on
+    // the rack: a static route redistributed into OSPFv2 stayed as a type-5
+    // LSA after the static route was deleted, because another router was
+    // advertising the same prefix and became the new best route.
+    #[test]
+    fn rib_update_protocol_change_withdraws_old_protocol() {
+        let (mut rib, netlink_tx, mut netlink_rx) = test_rib();
+        let mut ibus_rx = subscribe(&mut rib, &[Protocol::STATIC]);
+
+        rib.ip_route_add(route_msg(Protocol::OSPFV2, 110, 2), 0);
+        rib.ip_route_add(route_msg(Protocol::STATIC, 1, 3), 0);
+        drain(&mut rib, &mut netlink_rx, &netlink_tx);
+        assert_eq!(
+            drain_ibus(&mut ibus_rx),
+            vec![Redist::Add(Protocol::STATIC)]
+        );
+
+        // The OSPFv2 route takes over as the best route.
+        rib.ip_route_del(RouteKeyMsg {
+            protocol: Protocol::STATIC,
+            prefix: prefix(),
+        });
+        drain(&mut rib, &mut netlink_rx, &netlink_tx);
+        assert_eq!(
+            drain_ibus(&mut ibus_rx),
+            vec![Redist::Del(Protocol::STATIC)]
+        );
+    }
+
+    // A subscriber that redistributes both protocols must see the add for the
+    // new best route before the delete for the old one, so that it never
+    // withdraws the prefix in between.
+    #[test]
+    fn rib_update_protocol_change_adds_before_deleting() {
+        let (mut rib, netlink_tx, mut netlink_rx) = test_rib();
+        let mut ibus_rx =
+            subscribe(&mut rib, &[Protocol::STATIC, Protocol::OSPFV2]);
+
+        rib.ip_route_add(route_msg(Protocol::OSPFV2, 110, 2), 0);
+        rib.ip_route_add(route_msg(Protocol::STATIC, 1, 3), 0);
+        drain(&mut rib, &mut netlink_rx, &netlink_tx);
+        drain_ibus(&mut ibus_rx);
+
+        rib.ip_route_del(RouteKeyMsg {
+            protocol: Protocol::STATIC,
+            prefix: prefix(),
+        });
+        drain(&mut rib, &mut netlink_rx, &netlink_tx);
+        assert_eq!(
+            drain_ibus(&mut ibus_rx),
+            vec![Redist::Add(Protocol::OSPFV2), Redist::Del(Protocol::STATIC)]
+        );
+    }
+
+    // A best route replaced by one of the same protocol is a plain update: no
+    // delete may follow it, or the subscriber would drop the prefix.
+    #[test]
+    fn rib_update_same_protocol_is_an_add_only() {
+        let (mut rib, netlink_tx, mut netlink_rx) = test_rib();
+        let mut ibus_rx = subscribe(&mut rib, &[Protocol::STATIC]);
+
+        rib.ip_route_add(route_msg(Protocol::STATIC, 1, 2), 0);
+        drain(&mut rib, &mut netlink_rx, &netlink_tx);
+        drain_ibus(&mut ibus_rx);
+
+        rib.ip_route_add(route_msg(Protocol::STATIC, 1, 3), 0);
+        drain(&mut rib, &mut netlink_rx, &netlink_tx);
+        assert_eq!(
+            drain_ibus(&mut ibus_rx),
+            vec![Redist::Add(Protocol::STATIC)]
+        );
     }
 }
